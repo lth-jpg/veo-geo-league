@@ -793,7 +793,7 @@ export default function VeoGeoApp() {
                               <div className="mt-1.5 space-y-0.5">
                                 {score.redCards.map(rc => (
                                   <div key={rc.id} className="font-mono text-[9px] text-veo-dim">
-                                    {rc.givenBy.countryFlag} {rc.givenBy.name} 🟥 {score.player.countryFlag} {score.player.name}
+                                    {rc.givenBy.countryFlag} {rc.givenBy.name} 🟥
                                     {rc.reason && <span className="text-veo-red/80">: &quot;{rc.reason}&quot;</span>}
                                   </div>
                                 ))}
