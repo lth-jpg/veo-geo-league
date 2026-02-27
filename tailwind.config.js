@@ -25,6 +25,9 @@ module.exports = {
         'slide-in': 'slide-in 0.3s ease-out',
         'fade-in': 'fade-in 0.4s ease-out',
         'scan': 'scan 3s linear infinite',
+        'ticker': 'ticker 20s linear infinite',
+        'neon-pulse-green': 'neon-pulse-green 1.5s ease-in-out infinite',
+        'neon-pulse-red': 'neon-pulse-red 1.5s ease-in-out infinite',
       },
       keyframes: {
         'pulse-green': {
@@ -42,6 +45,18 @@ module.exports = {
         'scan': {
           '0%': { transform: 'translateY(-100%)' },
           '100%': { transform: 'translateY(100%)' },
+        },
+        'ticker': {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-50%)' },
+        },
+        'neon-pulse-green': {
+          '0%, 100%': { textShadow: '0 0 8px rgba(48,255,81,0.6)' },
+          '50%': { textShadow: '0 0 20px rgba(48,255,81,1), 0 0 40px rgba(48,255,81,0.4)' },
+        },
+        'neon-pulse-red': {
+          '0%, 100%': { textShadow: '0 0 8px rgba(255,48,48,0.6)' },
+          '50%': { textShadow: '0 0 20px rgba(255,48,48,1), 0 0 40px rgba(255,48,48,0.4)' },
         },
       },
     },

@@ -1,10 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Trophy, Flag, MessageSquare, Zap, ChevronDown, Search,
   Send, Archive, RefreshCw, Star, X, Plus, Check,
-  TrendingUp, Users, Calendar, Shield, AlertTriangle
+  TrendingUp, Users, Calendar, Shield, AlertTriangle,
+  ArrowUp, ArrowDown,
 } from 'lucide-react'
 
 type Player = { id: number; name: string; countryFlag: string }
@@ -13,18 +15,132 @@ type Standing = {
   monthlyAverage: number; top15Sum: number
   gamesPlayed: number; bestScore: number
   redCardCount: number; isMvp: boolean
+  formStreak: 'hot' | 'cold' | null
 }
+type RedCardEntry = { id: number; givenBy: Player; reason?: string | null }
 type Score = {
   id: number; playerId: number; round1: number; round2: number; round3: number
   total: number; date: string
+  positionChange?: number | null
   player: Player
-  redCards: { id: number; givenBy: Player }[]
+  redCards: RedCardEntry[]
   comments: Comment[]
   _count: { redCards: number }
 }
 type Comment = { id: number; scoreId: number; authorName: string; text: string; createdAt: string }
 type ChatMessage = { id: number; authorName: string; text: string; createdAt: string; player?: Player }
 type ArchiveMonth = { year: number; month: number; label: string }
+type BreakingNewsItem = {
+  id: number; type: string; message: string
+  playerId: number; player: Player
+  expiresAt: string; createdAt: string
+}
+
+// ─── BREAKING NEWS BANNER ───
+function BreakingNewsBanner({
+  items, onDismiss,
+}: {
+  items: BreakingNewsItem[]
+  onDismiss: (id: number) => void
+}) {
+  if (items.length === 0) return null
+  const latest = items[0]
+  const isTakeover = latest.type === 'takeover'
+  const neonColor = isTakeover ? '#30FF51' : '#FF3030'
+
+  return (
+    <div
+      className="relative overflow-hidden z-50"
+      style={{ background: '#000', borderBottom: `2px solid ${neonColor}` }}
+    >
+      {/* Glow line */}
+      <div style={{ height: 2, background: neonColor, boxShadow: `0 0 12px 4px ${neonColor}`, opacity: 0.8 }} />
+      <div className="flex items-center h-9">
+        {/* BREAKING label */}
+        <div
+          className="flex-shrink-0 px-3 h-full flex items-center font-display font-900 text-sm tracking-widest"
+          style={{ background: neonColor, color: '#000' }}
+        >
+          {isTakeover ? '👑 BREAKING' : '🤡 SHAME'}
+        </div>
+
+        {/* Scrolling ticker */}
+        <div className="flex-1 overflow-hidden relative">
+          <motion.div
+            className="flex items-center gap-16 whitespace-nowrap"
+            style={{ color: neonColor, fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700 }}
+            animate={{ x: ['0%', '-50%'] }}
+            transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
+          >
+            {/* Duplicate for seamless loop */}
+            {[0, 1].map(k => (
+              <span key={k} className="pl-8">
+                {latest.message}
+                {items.length > 1 && items.slice(1).map(n => (
+                  <span key={n.id} className="ml-16 opacity-70">{n.message}</span>
+                ))}
+              </span>
+            ))}
+          </motion.div>
+        </div>
+
+        {/* Dismiss */}
+        <button
+          onClick={() => onDismiss(latest.id)}
+          className="flex-shrink-0 px-3 h-full flex items-center text-xs font-mono transition-opacity hover:opacity-70"
+          style={{ color: neonColor }}
+        >
+          <X size={14} />
+        </button>
+      </div>
+      <div style={{ height: 2, background: neonColor, boxShadow: `0 0 12px 4px ${neonColor}`, opacity: 0.4 }} />
+    </div>
+  )
+}
+
+// ─── FORM BADGE ───
+function FormBadge({ streak }: { streak: 'hot' | 'cold' | null }) {
+  if (!streak) return null
+  if (streak === 'hot') {
+    return (
+      <span className="inline-flex items-center gap-1 font-mono text-[10px] px-1.5 py-0.5 rounded border border-orange-400/40 text-orange-400 bg-orange-400/10">
+        🔥 ON FIRE
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 font-mono text-[10px] px-1.5 py-0.5 rounded border border-blue-400/40 text-blue-400 bg-blue-400/10">
+      ❄️ IN THE MUD
+    </span>
+  )
+}
+
+// ─── POSITION CHANGE BADGE ───
+function PositionChangeBadge({ change }: { change: number | null | undefined }) {
+  if (change == null || change === 0) return null
+  const up = change > 0
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 font-mono text-[10px] font-bold px-1.5 py-0.5 rounded ${
+        up ? 'text-veo-green bg-veo-green/10 border border-veo-green/30' : 'text-veo-red bg-veo-red/10 border border-veo-red/30'
+      }`}
+    >
+      {up ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
+      {up ? '+' : ''}{change}
+    </span>
+  )
+}
+
+// ─── SCORE TAG (CLUTCH / SNIPER) ───
+function ScoreTag({ total }: { total: number }) {
+  if (total < 14800) return null
+  const tag = total >= 15000 ? 'PERFECT' : total >= 14950 ? 'SNIPER' : 'CLUTCH'
+  return (
+    <span className="inline-flex items-center font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border border-veo-green/50 text-veo-green bg-veo-green/10 tracking-wider">
+      {tag}
+    </span>
+  )
+}
 
 export default function VeoGeoApp() {
   const [activeTab, setActiveTab] = useState<'leaderboard' | 'submit' | 'chat' | 'archive'>('leaderboard')
@@ -42,6 +158,7 @@ export default function VeoGeoApp() {
   const [chatInput, setChatInput] = useState('')
   const [notification, setNotification] = useState<{ msg: string; type: 'green' | 'red' } | null>(null)
   const [redCardModal, setRedCardModal] = useState<{ score: Score } | null>(null)
+  const [redCardReason, setRedCardReason] = useState('')
   const [onboardMode, setOnboardMode] = useState<'select' | 'new'>('select')
   const [newName, setNewName] = useState('')
   const [newFlag, setNewFlag] = useState('')
@@ -49,7 +166,17 @@ export default function VeoGeoApp() {
   const [r1, setR1] = useState('')
   const [r2, setR2] = useState('')
   const [r3, setR3] = useState('')
+  const [breakingNews, setBreakingNews] = useState<BreakingNewsItem[]>([])
+  const [dismissedNews, setDismissedNews] = useState<Set<number>>(new Set())
   const chatEndRef = useRef<HTMLDivElement>(null)
+
+  // Load dismissed news IDs from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('dismissedNews')
+      if (stored) setDismissedNews(new Set(JSON.parse(stored) as number[]))
+    } catch { /* ignore */ }
+  }, [])
 
   const notify = (msg: string, type: 'green' | 'red' = 'green') => {
     setNotification({ msg, type })
@@ -90,9 +217,15 @@ export default function VeoGeoApp() {
     setRedCardStatus(await res.json())
   }, [currentPlayer])
 
+  const fetchBreakingNews = useCallback(async () => {
+    const res = await fetch('/api/breaking-news')
+    const items: BreakingNewsItem[] = await res.json()
+    setBreakingNews(items)
+  }, [])
+
   useEffect(() => {
-    fetchPlayers(); fetchLeaderboard(); fetchTodayScores(); fetchChat(); fetchArchive()
-  }, [fetchPlayers, fetchLeaderboard, fetchTodayScores, fetchChat, fetchArchive])
+    fetchPlayers(); fetchLeaderboard(); fetchTodayScores(); fetchChat(); fetchArchive(); fetchBreakingNews()
+  }, [fetchPlayers, fetchLeaderboard, fetchTodayScores, fetchChat, fetchArchive, fetchBreakingNews])
 
   useEffect(() => {
     if (currentPlayer) fetchRedCardStatus()
@@ -104,11 +237,21 @@ export default function VeoGeoApp() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchLeaderboard(); fetchTodayScores(); fetchChat()
+      fetchLeaderboard(); fetchTodayScores(); fetchChat(); fetchBreakingNews()
       if (currentPlayer) fetchRedCardStatus()
     }, 30000)
     return () => clearInterval(interval)
-  }, [fetchLeaderboard, fetchTodayScores, fetchChat, fetchRedCardStatus, currentPlayer])
+  }, [fetchLeaderboard, fetchTodayScores, fetchChat, fetchBreakingNews, fetchRedCardStatus, currentPlayer])
+
+  const dismissNews = (id: number) => {
+    const arr = Array.from(dismissedNews)
+    arr.push(id)
+    const updated = new Set(arr)
+    setDismissedNews(updated)
+    try { localStorage.setItem('dismissedNews', JSON.stringify(arr)) } catch { /* ignore */ }
+  }
+
+  const activeNews = breakingNews.filter(n => !dismissedNews.has(n.id))
 
   const selectPlayer = (p: Player) => {
     setCurrentPlayer(p)
@@ -134,7 +277,7 @@ export default function VeoGeoApp() {
       body: JSON.stringify({ playerId: currentPlayer.id, round1: r1, round2: r2, round3: r3 }),
     })
     if (res.ok) {
-      await fetchTodayScores(); await fetchLeaderboard()
+      await fetchTodayScores(); await fetchLeaderboard(); await fetchBreakingNews()
       const t = (parseInt(r1)||0)+(parseInt(r2)||0)+(parseInt(r3)||0)
       notify(`Score submitted: ${t.toLocaleString()} pts!`)
       setR1(''); setR2(''); setR3('')
@@ -146,10 +289,16 @@ export default function VeoGeoApp() {
     if (score.playerId === currentPlayer.id) { notify("Can't card yourself!", 'red'); return }
     const res = await fetch('/api/redcards', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ givenById: currentPlayer.id, receivedById: score.playerId, scoreId: score.id }),
+      body: JSON.stringify({
+        givenById: currentPlayer.id,
+        receivedById: score.playerId,
+        scoreId: score.id,
+        reason: redCardReason.trim() || null,
+      }),
     })
     if (res.ok) {
       setRedCardModal(null)
+      setRedCardReason('')
       notify(`🟥 RED CARD issued to ${score.player.name}!`, 'red')
       await fetchTodayScores(); await fetchLeaderboard(); await fetchRedCardStatus()
     } else {
@@ -198,73 +347,102 @@ export default function VeoGeoApp() {
   return (
     <div className="min-h-screen bg-black">
 
+      {/* ─── BREAKING NEWS BANNER ─── */}
+      <BreakingNewsBanner items={activeNews} onDismiss={dismissNews} />
+
       {/* ─── RED CARD CONFIRMATION MODAL ─── */}
-      {redCardModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(8px)' }}
-          onClick={() => setRedCardModal(null)}
-        >
-          <div
-            className="w-full max-w-sm bento-card p-6 veo-red-glow animate-slide-in"
-            onClick={e => e.stopPropagation()}
+      <AnimatePresence>
+        {redCardModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(8px)' }}
+            onClick={() => { setRedCardModal(null); setRedCardReason('') }}
           >
-            <div className="text-center mb-6">
-              <div className="text-7xl mb-3 animate-pulse">🟥</div>
-              <h2 className="font-display text-4xl font-900 text-veo-red tracking-wider uppercase">Red Card</h2>
-              <p className="font-mono text-xs text-veo-dim mt-2">One card per day. No takebacks.</p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-black border border-veo-red/30 mb-6">
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-3xl">{redCardModal.score.player.countryFlag}</span>
-                <div className="flex-1">
-                  <div className="font-display text-xl font-700 text-white">{redCardModal.score.player.name}</div>
-                  <div className="font-mono text-[10px] text-veo-dim">Today&apos;s score</div>
-                </div>
-                <div className="text-right">
-                  <div className="font-display text-3xl font-900 text-veo-red">{redCardModal.score.total.toLocaleString()}</div>
-                  <div className="font-mono text-[9px] text-veo-dim">/ 15,000</div>
-                </div>
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="w-full max-w-sm bento-card p-6 veo-red-glow"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="text-center mb-6">
+                <div className="text-7xl mb-3 animate-pulse">🟥</div>
+                <h2 className="font-display text-4xl font-900 text-veo-red tracking-wider uppercase">Red Card</h2>
+                <p className="font-mono text-xs text-veo-dim mt-2">One card per day. No takebacks.</p>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {[redCardModal.score.round1, redCardModal.score.round2, redCardModal.score.round3].map((r, i) => (
-                  <div key={i} className="text-center p-2 rounded-lg bg-veo-surface border border-veo-border">
-                    <div className="font-display text-sm font-700 text-white">{r.toLocaleString()}</div>
-                    <div className="font-mono text-[8px] text-veo-dim">ROUND {i+1}</div>
+
+              <div className="p-4 rounded-xl bg-black border border-veo-red/30 mb-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-3xl">{redCardModal.score.player.countryFlag}</span>
+                  <div className="flex-1">
+                    <div className="font-display text-xl font-700 text-white">{redCardModal.score.player.name}</div>
+                    <div className="font-mono text-[10px] text-veo-dim">Today&apos;s score</div>
                   </div>
-                ))}
+                  <div className="text-right">
+                    <div className="font-display text-3xl font-900 text-veo-red">{redCardModal.score.total.toLocaleString()}</div>
+                    <div className="font-mono text-[9px] text-veo-dim">/ 15,000</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[redCardModal.score.round1, redCardModal.score.round2, redCardModal.score.round3].map((r, i) => (
+                    <div key={i} className="text-center p-2 rounded-lg bg-veo-surface border border-veo-border">
+                      <div className="font-display text-sm font-700 text-white">{r.toLocaleString()}</div>
+                      <div className="font-mono text-[8px] text-veo-dim">ROUND {i+1}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            <div className="flex gap-3">
-              <button
-                onClick={() => setRedCardModal(null)}
-                className="flex-1 py-3 rounded-xl border border-veo-border text-veo-dim font-mono text-sm hover:border-veo-muted transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => giveRedCard(redCardModal.score)}
-                className="flex-1 py-3 rounded-xl bg-veo-red text-white font-display text-xl font-900 tracking-wider hover:bg-red-600 transition-all"
-              >
-                🟥 CARD THEM
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              {/* Reason input */}
+              <div className="mb-4">
+                <label className="block font-mono text-[10px] text-veo-dim mb-1 uppercase tracking-wider">Reason (optional)</label>
+                <input
+                  value={redCardReason}
+                  onChange={e => setRedCardReason(e.target.value)}
+                  placeholder="Why are you carding them?..."
+                  className="veo-input w-full px-3 py-2 rounded-lg text-xs"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setRedCardModal(null); setRedCardReason('') }}
+                  className="flex-1 py-3 rounded-xl border border-veo-border text-veo-dim font-mono text-sm hover:border-veo-muted transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => giveRedCard(redCardModal.score)}
+                  className="flex-1 py-3 rounded-xl bg-veo-red text-white font-display text-xl font-900 tracking-wider hover:bg-red-600 transition-all"
+                >
+                  🟥 CARD THEM
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Notification toast */}
-      {notification && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-2 rounded-lg border font-mono text-sm animate-slide-in ${
-          notification.type === 'green'
-            ? 'bg-veo-surface border-veo-green text-veo-green'
-            : 'bg-veo-surface border-veo-red text-veo-red'
-        }`}>
-          {notification.msg}
-        </div>
-      )}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, x: 20 }}
+            animate={{ opacity: 1, y: 0, x: 0 }}
+            exit={{ opacity: 0, y: -20, x: 20 }}
+            className={`fixed top-4 right-4 z-50 px-4 py-2 rounded-lg border font-mono text-sm ${
+              notification.type === 'green'
+                ? 'bg-veo-surface border-veo-green text-veo-green'
+                : 'bg-veo-surface border-veo-red text-veo-red'
+            }`}
+          >
+            {notification.msg}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Header */}
       <header className="border-b border-veo-border bg-veo-surface/50 backdrop-blur-sm sticky top-0 z-40">
@@ -302,7 +480,7 @@ export default function VeoGeoApp() {
               <div className="text-veo-dim font-mono text-xs">← Select player</div>
             )}
             <button
-              onClick={() => { fetchLeaderboard(); fetchTodayScores(); fetchChat(); if(currentPlayer) fetchRedCardStatus() }}
+              onClick={() => { fetchLeaderboard(); fetchTodayScores(); fetchChat(); fetchBreakingNews(); if(currentPlayer) fetchRedCardStatus() }}
               className="p-2 rounded-lg border border-veo-border hover:border-veo-green/30 text-veo-dim hover:text-veo-green transition-colors"
             ><RefreshCw size={14} /></button>
           </div>
@@ -498,6 +676,7 @@ export default function VeoGeoApp() {
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-display text-base font-700 text-white tracking-wide">{s.name}</span>
                               {s.isMvp && <span title="Monthly MVP">🏆</span>}
+                              <FormBadge streak={s.formStreak} />
                               {s.redCardCount > 0 && (
                                 <span className="font-mono text-[10px] text-veo-red bg-veo-red/10 px-1.5 py-0.5 rounded border border-veo-red/20">
                                   🟥 ×{s.redCardCount}
@@ -526,81 +705,112 @@ export default function VeoGeoApp() {
             </div>
 
             <div className="space-y-4">
+              {/* ─── MATCH DAY LIVE FEED ─── */}
               <div className="bento-card p-4">
                 <div className="flex items-center gap-2 mb-4">
                   <Calendar size={14} className="text-veo-green" />
-                  <span className="font-display text-base font-700 tracking-wide text-white uppercase">Today&apos;s Scores</span>
+                  <span className="font-display text-base font-700 tracking-wide text-white uppercase">Match Day Live</span>
+                  {todayScores.length > 0 && (
+                    <span className="ml-auto font-mono text-[9px] text-veo-green animate-pulse">● LIVE</span>
+                  )}
                 </div>
                 {todayScores.length === 0 ? (
                   <p className="text-veo-dim font-mono text-xs text-center py-6">No scores today yet</p>
                 ) : (
                   <div className="space-y-2">
-                    {todayScores.map((score, i) => (
-                      <div key={score.id} className="animate-fade-in">
-                        <div
-                          className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                            expandedScore===score.id ? 'border-veo-green/30 bg-veo-green/5' : 'border-veo-border hover:border-veo-muted'
-                          }`}
-                          onClick={() => setExpandedScore(expandedScore===score.id?null:score.id)}
+                    {todayScores.map((score, i) => {
+                      const isClutch = score.total >= 14800
+                      return (
+                        <motion.div
+                          key={score.id}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * 0.05 }}
                         >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              {i===0 && <span title="Today MVP">🏅</span>}
-                              <span>{score.player.countryFlag}</span>
-                              <span className="font-mono text-xs text-veo-text">{score.player.name}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {score._count.redCards > 0 && (
-                                <span className="text-[10px] font-mono text-veo-red">🟥×{score._count.redCards}</span>
-                              )}
-                              <span className={`font-display text-base font-700 ${i===0?'text-veo-green':'text-white'}`}>
-                                {score.total.toLocaleString()}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex gap-1 mt-1.5">
-                            {[score.round1,score.round2,score.round3].map((r,ri) => (
-                              <div key={ri} className="flex-1 h-1 rounded-full bg-veo-muted overflow-hidden">
-                                <div className="h-full rounded-full" style={{
-                                  width:`${(r/5000)*100}%`,
-                                  background:r>=4500?'#30FF51':r>=3000?'#60a0c0':'#3a4a5a'
-                                }}/>
+                          <div
+                            className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                              isClutch
+                                ? 'border-veo-green/50 bg-veo-green/5 veo-green-glow'
+                                : expandedScore===score.id
+                                  ? 'border-veo-green/30 bg-veo-green/5'
+                                  : 'border-veo-border hover:border-veo-muted'
+                            }`}
+                            onClick={() => setExpandedScore(expandedScore===score.id?null:score.id)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {i===0 && <span title="Today MVP">🏅</span>}
+                                <span>{score.player.countryFlag}</span>
+                                <span className="font-mono text-xs text-veo-text">{score.player.name}</span>
+                                <ScoreTag total={score.total} />
+                                <PositionChangeBadge change={score.positionChange} />
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                        {expandedScore===score.id && (
-                          <div className="ml-2 mt-1 p-3 rounded-xl bg-veo-surface border border-veo-border animate-slide-in">
-                            <div className="flex gap-2 mb-2 font-mono text-[10px] text-veo-dim">
-                              <span>R1: {score.round1.toLocaleString()}</span>
-                              <span>R2: {score.round2.toLocaleString()}</span>
-                              <span>R3: {score.round3.toLocaleString()}</span>
+                              <div className="flex items-center gap-2">
+                                {score._count.redCards > 0 && (
+                                  <span className="text-[10px] font-mono text-veo-red">🟥×{score._count.redCards}</span>
+                                )}
+                                <span className={`font-display text-base font-700 ${isClutch?'text-veo-green':i===0?'text-veo-green':'text-white'}`}>
+                                  {score.total.toLocaleString()}
+                                </span>
+                              </div>
                             </div>
-                            {score.comments.length > 0 && (
-                              <div className="space-y-1.5 mb-2">
-                                {score.comments.map(c => (
-                                  <div key={c.id} className="p-2 bg-black rounded-lg border border-veo-border">
-                                    <span className="font-mono text-[9px] text-veo-green">{c.authorName}: </span>
-                                    <span className="font-mono text-[10px] text-veo-text">{c.text}</span>
+
+                            {/* Red cards with reasons */}
+                            {score.redCards.length > 0 && (
+                              <div className="mt-1.5 space-y-0.5">
+                                {score.redCards.map(rc => (
+                                  <div key={rc.id} className="font-mono text-[9px] text-veo-dim">
+                                    {rc.givenBy.countryFlag} {rc.givenBy.name} 🟥 {score.player.countryFlag} {score.player.name}
+                                    {rc.reason && <span className="text-veo-red/80">: &quot;{rc.reason}&quot;</span>}
                                   </div>
                                 ))}
                               </div>
                             )}
-                            {currentPlayer && (
-                              <div className="flex gap-1">
-                                <input value={commentText} onChange={e=>setCommentText(e.target.value)}
-                                  onKeyDown={e=>e.key==='Enter'&&postComment(score.id)}
-                                  placeholder="Post-match comment..." className="veo-input flex-1 px-2 py-1.5 rounded-lg text-[10px]"/>
-                                <button onClick={()=>postComment(score.id)}
-                                  className="px-2 py-1.5 rounded-lg bg-veo-green/20 border border-veo-green/30 text-veo-green hover:bg-veo-green/30 transition-colors">
-                                  <Send size={10}/>
-                                </button>
-                              </div>
-                            )}
+
+                            <div className="flex gap-1 mt-1.5">
+                              {[score.round1,score.round2,score.round3].map((r,ri) => (
+                                <div key={ri} className="flex-1 h-1 rounded-full bg-veo-muted overflow-hidden">
+                                  <div className="h-full rounded-full" style={{
+                                    width:`${(r/5000)*100}%`,
+                                    background:r>=4500?'#30FF51':r>=3000?'#60a0c0':'#3a4a5a'
+                                  }}/>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    ))}
+                          {expandedScore===score.id && (
+                            <div className="ml-2 mt-1 p-3 rounded-xl bg-veo-surface border border-veo-border animate-slide-in">
+                              <div className="flex gap-2 mb-2 font-mono text-[10px] text-veo-dim">
+                                <span>R1: {score.round1.toLocaleString()}</span>
+                                <span>R2: {score.round2.toLocaleString()}</span>
+                                <span>R3: {score.round3.toLocaleString()}</span>
+                              </div>
+                              {score.comments.length > 0 && (
+                                <div className="space-y-1.5 mb-2">
+                                  {score.comments.map(c => (
+                                    <div key={c.id} className="p-2 bg-black rounded-lg border border-veo-border">
+                                      <span className="font-mono text-[9px] text-veo-green">{c.authorName}: </span>
+                                      <span className="font-mono text-[10px] text-veo-text">{c.text}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {currentPlayer && (
+                                <div className="flex gap-1">
+                                  <input value={commentText} onChange={e=>setCommentText(e.target.value)}
+                                    onKeyDown={e=>e.key==='Enter'&&postComment(score.id)}
+                                    placeholder="Post-match comment..." className="veo-input flex-1 px-2 py-1.5 rounded-lg text-[10px]"/>
+                                  <button onClick={()=>postComment(score.id)}
+                                    className="px-2 py-1.5 rounded-lg bg-veo-green/20 border border-veo-green/30 text-veo-green hover:bg-veo-green/30 transition-colors">
+                                    <Send size={10}/>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </motion.div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -622,7 +832,10 @@ export default function VeoGeoApp() {
                   {standings[0] && (
                     <div className="col-span-2 p-2 bg-black rounded-lg border border-veo-green/20 text-center">
                       <div className="font-mono text-[9px] text-veo-dim uppercase mb-1">Current Leader</div>
-                      <div className="font-display text-base font-700 text-veo-green">{standings[0].countryFlag} {standings[0].name}</div>
+                      <div className="font-display text-base font-700 text-veo-green">
+                        {standings[0].countryFlag} {standings[0].name}
+                        {standings[0].formStreak === 'hot' && <span className="ml-1">🔥</span>}
+                      </div>
                       <div className="font-mono text-[10px] text-veo-dim">avg {standings[0].monthlyAverage.toFixed(0)}</div>
                     </div>
                   )}
@@ -700,6 +913,14 @@ export default function VeoGeoApp() {
                     <div className="font-mono text-[10px] text-veo-dim uppercase tracking-wider mb-1">Total Score</div>
                     <div className={`font-display text-5xl font-900 ${total>0?'text-veo-green':'text-veo-muted'}`}>{total.toLocaleString()}</div>
                     <div className="font-mono text-[10px] text-veo-dim mt-1">/ 15,000</div>
+                    {total >= 14800 && (
+                      <div className="mt-2">
+                        <ScoreTag total={total} />
+                      </div>
+                    )}
+                    {total > 0 && total < 6000 && (
+                      <div className="mt-2 font-mono text-[10px] text-veo-red">⚠️ Sub-6000 incoming — brace for shame</div>
+                    )}
                   </div>
                   <button onClick={submitScore} disabled={total===0}
                     className="w-full py-3 rounded-xl bg-veo-green text-black font-display text-lg font-900 tracking-wider hover:bg-veo-green/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2">
@@ -812,6 +1033,7 @@ export default function VeoGeoApp() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-display text-base font-700 text-white">{s.name}</span>
                             {s.isMvp && <span>🏆</span>}
+                            <FormBadge streak={s.formStreak} />
                             {s.redCardCount > 0 && (
                               <span className="font-mono text-[10px] text-veo-red bg-veo-red/10 px-1.5 py-0.5 rounded border border-veo-red/20">🟥 ×{s.redCardCount}</span>
                             )}

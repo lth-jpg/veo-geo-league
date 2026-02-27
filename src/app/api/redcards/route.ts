@@ -5,7 +5,7 @@ import { getTodayRange } from '@/lib/utils'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
-  const { givenById, receivedById, scoreId } = await req.json()
+  const { givenById, receivedById, scoreId, reason } = await req.json()
   if (!givenById || !receivedById || !scoreId) {
     return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
   }
@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
       givenById: parseInt(givenById),
       receivedById: parseInt(receivedById),
       scoreId: parseInt(scoreId),
+      reason: reason?.trim() || null,
     },
     include: { givenBy: true, receivedBy: true },
   })
