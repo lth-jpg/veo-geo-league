@@ -175,6 +175,21 @@ export default function VeoGeoApp() {
     setChatInput(''); await fetchChat()
   }
 
+  const isLeoAdmin = currentPlayer?.name.toLowerCase() === 'leo'
+
+  const deletePlayer = async (playerId: number, playerName: string) => {
+    if (!isLeoAdmin) return
+    const res = await fetch(`/api/players?id=${playerId}&adminName=${encodeURIComponent(currentPlayer!.name)}`, {
+      method: 'DELETE',
+    })
+    if (res.ok) {
+      notify(`${playerName} removed from the league.`, 'red')
+      await fetchPlayers(); await fetchLeaderboard(); await fetchTodayScores()
+    } else {
+      const err = await res.json(); notify(err.error || 'Error removing player', 'red')
+    }
+  }
+
   const total = (parseInt(r1)||0)+(parseInt(r2)||0)+(parseInt(r3)||0)
   const filteredPlayers = players.filter(p =>
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.countryFlag.includes(searchQuery)
@@ -278,6 +293,9 @@ export default function VeoGeoApp() {
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black border border-veo-green/30">
                 <span className="text-lg">{currentPlayer.countryFlag}</span>
                 <span className="font-mono text-xs text-veo-green font-bold">{currentPlayer.name}</span>
+                {isLeoAdmin && (
+                  <span className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-veo-red/40 text-veo-red bg-veo-red/10 leading-none">ADMIN</span>
+                )}
                 <button onClick={() => setCurrentPlayer(null)} className="text-veo-dim hover:text-veo-red ml-1"><X size={12} /></button>
               </div>
             ) : (
@@ -330,21 +348,51 @@ export default function VeoGeoApp() {
                 </div>
               </div>
             ) : (
-              <div className="flex gap-3 items-end">
-                <div className="flex-shrink-0 w-20">
-                  <label className="block font-mono text-[10px] text-veo-dim mb-1 uppercase tracking-wider">Flag</label>
-                  <input value={newFlag} onChange={e => setNewFlag(e.target.value)} placeholder="🇺🇸"
-                    className="veo-input w-full px-3 py-2 rounded-lg text-xl text-center" />
+              <div className="space-y-3">
+                <p className="font-mono text-[10px] text-veo-dim">Pick any emoji to represent you — flag, vibe, whatever fits.</p>
+
+                {/* Emoji quick-pick grid */}
+                <div>
+                  <p className="font-mono text-[9px] text-veo-dim mb-1.5 uppercase tracking-wider">Quick pick</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['🇺🇸','🇬🇧','🇩🇪','🇫🇷','🇪🇸','🇵🇹','🇮🇹','🇳🇱','🇧🇪','🇸🇪','🇳🇴','🇩🇰','🇵🇱','🇧🇷','🇦🇷','🇲🇽','🇯🇵','🇰🇷','🇨🇳','🇦🇺','🇨🇦','🇿🇦','🇳🇬','🎯','⚽','🔥','👾','🐉','🦅','💀'].map(e => (
+                      <button
+                        key={e}
+                        type="button"
+                        onClick={() => setNewFlag(e)}
+                        className={`text-xl w-9 h-9 flex items-center justify-center rounded-lg border transition-all ${
+                          newFlag === e
+                            ? 'border-veo-green bg-veo-green/20'
+                            : 'border-veo-border hover:border-veo-muted bg-black'
+                        }`}
+                      >
+                        {e}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <label className="block font-mono text-[10px] text-veo-dim mb-1 uppercase tracking-wider">Name</label>
-                  <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key==='Enter'&&createPlayer()}
-                    placeholder="Enter your name..." className="veo-input w-full px-3 py-2 rounded-lg text-sm" />
+
+                <div className="flex gap-3 items-end">
+                  <div className="flex-shrink-0 w-20">
+                    <label className="block font-mono text-[10px] text-veo-dim mb-1 uppercase tracking-wider">Selected</label>
+                    <input
+                      value={newFlag}
+                      onChange={e => setNewFlag(e.target.value)}
+                      placeholder="?"
+                      className="veo-input w-full px-3 py-2 rounded-lg text-2xl text-center"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block font-mono text-[10px] text-veo-dim mb-1 uppercase tracking-wider">Name</label>
+                    <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key==='Enter'&&createPlayer()}
+                      placeholder="Enter your name..." className="veo-input w-full px-3 py-2 rounded-lg text-sm" />
+                  </div>
+                  <button onClick={createPlayer} disabled={!newName.trim()||!newFlag.trim()}
+                    className="px-4 py-2 rounded-lg bg-veo-green text-black font-mono text-xs font-bold hover:bg-veo-green/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center gap-1">
+                    <Plus size={14} /> JOIN
+                  </button>
                 </div>
-                <button onClick={createPlayer} disabled={!newName.trim()||!newFlag.trim()}
-                  className="px-4 py-2 rounded-lg bg-veo-green text-black font-mono text-xs font-bold hover:bg-veo-green/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center gap-1">
-                  <Plus size={14} /> JOIN
-                </button>
+                <p className="font-mono text-[9px] text-veo-dim">Not in the list? Paste any emoji into the selected box above.</p>
               </div>
             )}
           </div>
@@ -580,6 +628,35 @@ export default function VeoGeoApp() {
                   )}
                 </div>
               </div>
+
+              {/* ─── LEO ADMIN PANEL ─── */}
+              {isLeoAdmin && (
+                <div className="bento-card p-4 border-veo-red/30" style={{ borderColor: 'rgba(255,48,48,0.3)' }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Shield size={14} className="text-veo-red" />
+                    <span className="font-display text-base font-700 tracking-wide text-veo-red uppercase">Admin Panel</span>
+                    <span className="ml-auto font-mono text-[9px] text-veo-dim">Leo only</span>
+                  </div>
+                  <p className="font-mono text-[10px] text-veo-dim mb-3">Remove any player from the league.</p>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {players.filter(p => p.id !== currentPlayer!.id).map(p => (
+                      <div key={p.id} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-veo-border bg-black">
+                        <span className="text-lg">{p.countryFlag}</span>
+                        <span className="font-mono text-xs text-veo-text flex-1 truncate">{p.name}</span>
+                        <button
+                          onClick={() => deletePlayer(p.id, p.name)}
+                          className="px-2 py-1 rounded border border-veo-red/40 text-veo-red font-mono text-[9px] hover:bg-veo-red/10 transition-colors"
+                        >
+                          REMOVE
+                        </button>
+                      </div>
+                    ))}
+                    {players.filter(p => p.id !== currentPlayer!.id).length === 0 && (
+                      <p className="font-mono text-[10px] text-veo-dim text-center py-2">No other players</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
