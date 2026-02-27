@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getTodayRange, getMonthRange, calcMonthlyAverage } from '@/lib/utils'
+import { postToSlack, veoHeader, veoSection, veoContext } from '@/lib/slack'
+import { shameLine, takeoverLine } from '@/lib/commentary'
 
 export const dynamic = 'force-dynamic'
 
@@ -111,6 +113,15 @@ export async function POST(req: NextRequest) {
           expiresAt,
         },
       })
+      // Slack real-time shame ping
+      await postToSlack(
+        [
+          veoHeader('🚨 DISASTER ALERT'),
+          veoSection(shameLine(score.player.name, total)),
+          veoContext(`${score.player.countryFlag} ${score.player.name} — ${total.toLocaleString()} pts`),
+        ],
+        `🚨 ${score.player.name} posted ${total.toLocaleString()}. That's rough.`
+      )
     }
 
     // Breaking news: check for lead takeover trigger (moved to 1st place)
@@ -124,6 +135,15 @@ export async function POST(req: NextRequest) {
           expiresAt,
         },
       })
+      // Slack real-time takeover ping
+      await postToSlack(
+        [
+          veoHeader('👑 LEAD TAKEOVER'),
+          veoSection(takeoverLine(score.player.name)),
+          veoContext(`${score.player.countryFlag} ${score.player.name} — new monthly leader`),
+        ],
+        `👑 ${score.player.name} has taken the league lead!`
+      )
     }
 
     return NextResponse.json({ ...score, positionChange })
