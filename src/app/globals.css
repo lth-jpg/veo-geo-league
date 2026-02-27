@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'Barlow Condensed', sans-serif;
+  --font-body: 'Space Mono', monospace;
+  --font-mono: 'Space Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: #000000;
+  color: #e0e8f0;
+  font-family: var(--font-body);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #0b0e11;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3040;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #30FF51;
+}
+
+/* Scanline effect overlay for bento cards */
+.scanline {
+  position: relative;
+  overflow: hidden;
+}
+.scanline::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+.bento-card {
+  background: #0b0e11;
+  border: 1px solid #1a1f26;
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+
+.bento-card:hover {
+  border-color: #2a3040;
+}
+
+.veo-green-glow {
+  box-shadow: 0 0 20px rgba(48, 255, 81, 0.15), 0 0 60px rgba(48, 255, 81, 0.05);
+  border-color: rgba(48, 255, 81, 0.3) !important;
+}
+
+.veo-red-glow {
+  box-shadow: 0 0 20px rgba(255, 48, 48, 0.15), 0 0 60px rgba(255, 48, 48, 0.05);
+  border-color: rgba(255, 48, 48, 0.3) !important;
+}
+
+/* Score bar animation */
+.score-bar {
+  transition: width 0.8s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Input styles */
+.veo-input {
+  background: #000000;
+  border: 1px solid #1a1f26;
+  color: #e0e8f0;
+  font-family: var(--font-mono);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.veo-input:focus {
+  outline: none;
+  border-color: #30FF51;
+  box-shadow: 0 0 0 2px rgba(48, 255, 81, 0.1);
+}
+.veo-input::placeholder {
+  color: #6b7a8d;
+}
+
+/* Rank numbers */
+.rank-1 { color: #30FF51; text-shadow: 0 0 10px rgba(48, 255, 81, 0.5); }
+.rank-2 { color: #a0b0c0; }
+.rank-3 { color: #cd7f32; }

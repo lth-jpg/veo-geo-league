@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Player {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  countryFlag String    // Emoji flag
+  createdAt   DateTime  @default(now())
+
+  scores      Score[]
+  redCardsGiven    RedCard[] @relation("GivenBy")
+  redCardsReceived RedCard[] @relation("ReceivedBy")
+  chatMessages ChatMessage[]
+}
+
+model Score {
+  id        Int      @id @default(autoincrement())
+  playerId  Int
+  player    Player   @relation(fields: [playerId], references: [id])
+  round1    Int      @default(0) // 0-5000
+  round2    Int      @default(0)
+  round3    Int      @default(0)
+  total     Int      @default(0) // sum of rounds
+  date      DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  redCards  RedCard[]
+  comments  Comment[]
+
+  @@unique([playerId, date])
+  @@index([date])
+}
+
+model RedCard {
+  id          Int      @id @default(autoincrement())
+  givenById   Int
+  givenBy     Player   @relation("GivenBy", fields: [givenById], references: [id])
+  receivedById Int
+  receivedBy  Player   @relation("ReceivedBy", fields: [receivedById], references: [id])
+  scoreId     Int
+  score       Score    @relation(fields: [scoreId], references: [id])
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([givenById, date]) // one red card per day per giver
+  @@index([receivedById])
+  @@index([scoreId])
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  scoreId   Int
+  score     Score    @relation(fields: [scoreId], references: [id])
+  authorName String  // player name (no auth, honor system)
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([scoreId])
+}
+
+model ChatMessage {
+  id        Int      @id @default(autoincrement())
+  playerId  Int?
+  player    Player?  @relation(fields: [playerId], references: [id])
+  authorName String
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

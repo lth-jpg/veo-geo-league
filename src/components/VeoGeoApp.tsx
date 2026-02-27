@@ -1,0 +1,764 @@
+'use client'
+
+import { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  Trophy, Flag, MessageSquare, Zap, ChevronDown, Search,
+  Send, Archive, RefreshCw, Star, X, Plus, Check,
+  TrendingUp, Users, Calendar, Shield, AlertTriangle
+} from 'lucide-react'
+
+type Player = { id: number; name: string; countryFlag: string }
+type Standing = {
+  id: number; name: string; countryFlag: string
+  monthlyAverage: number; top15Sum: number
+  gamesPlayed: number; bestScore: number
+  redCardCount: number; isMvp: boolean
+}
+type Score = {
+  id: number; playerId: number; round1: number; round2: number; round3: number
+  total: number; date: string
+  player: Player
+  redCards: { id: number; givenBy: Player }[]
+  comments: Comment[]
+  _count: { redCards: number }
+}
+type Comment = { id: number; scoreId: number; authorName: string; text: string; createdAt: string }
+type ChatMessage = { id: number; authorName: string; text: string; createdAt: string; player?: Player }
+type ArchiveMonth = { year: number; month: number; label: string }
+
+export default function VeoGeoApp() {
+  const [activeTab, setActiveTab] = useState<'leaderboard' | 'submit' | 'chat' | 'archive'>('leaderboard')
+  const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null)
+  const [players, setPlayers] = useState<Player[]>([])
+  const [standings, setStandings] = useState<Standing[]>([])
+  const [todayScores, setTodayScores] = useState<Score[]>([])
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [archiveMonths, setArchiveMonths] = useState<ArchiveMonth[]>([])
+  const [archiveStandings, setArchiveStandings] = useState<Standing[]>([])
+  const [selectedArchive, setSelectedArchive] = useState<ArchiveMonth | null>(null)
+  const [redCardStatus, setRedCardStatus] = useState<{ usedToday: boolean; card?: unknown }>({ usedToday: false })
+  const [expandedScore, setExpandedScore] = useState<number | null>(null)
+  const [commentText, setCommentText] = useState('')
+  const [chatInput, setChatInput] = useState('')
+  const [notification, setNotification] = useState<{ msg: string; type: 'green' | 'red' } | null>(null)
+  const [redCardModal, setRedCardModal] = useState<{ score: Score } | null>(null)
+  const [onboardMode, setOnboardMode] = useState<'select' | 'new'>('select')
+  const [newName, setNewName] = useState('')
+  const [newFlag, setNewFlag] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [r1, setR1] = useState('')
+  const [r2, setR2] = useState('')
+  const [r3, setR3] = useState('')
+  const chatEndRef = useRef<HTMLDivElement>(null)
+
+  const notify = (msg: string, type: 'green' | 'red' = 'green') => {
+    setNotification({ msg, type })
+    setTimeout(() => setNotification(null), 3500)
+  }
+
+  const fetchPlayers = useCallback(async () => {
+    const res = await fetch('/api/players')
+    setPlayers(await res.json())
+  }, [])
+
+  const fetchLeaderboard = useCallback(async (year?: number, month?: number) => {
+    const params = year !== undefined ? `?year=${year}&month=${month}` : ''
+    const res = await fetch(`/api/leaderboard${params}`)
+    const data = await res.json()
+    if (year !== undefined) setArchiveStandings(data.standings)
+    else setStandings(data.standings)
+  }, [])
+
+  const fetchTodayScores = useCallback(async () => {
+    const res = await fetch('/api/scores')
+    setTodayScores(await res.json())
+  }, [])
+
+  const fetchChat = useCallback(async () => {
+    const res = await fetch('/api/chat')
+    setChatMessages(await res.json())
+  }, [])
+
+  const fetchArchive = useCallback(async () => {
+    const res = await fetch('/api/archive')
+    setArchiveMonths(await res.json())
+  }, [])
+
+  const fetchRedCardStatus = useCallback(async () => {
+    if (!currentPlayer) return
+    const res = await fetch(`/api/redcards?givenById=${currentPlayer.id}`)
+    setRedCardStatus(await res.json())
+  }, [currentPlayer])
+
+  useEffect(() => {
+    fetchPlayers(); fetchLeaderboard(); fetchTodayScores(); fetchChat(); fetchArchive()
+  }, [fetchPlayers, fetchLeaderboard, fetchTodayScores, fetchChat, fetchArchive])
+
+  useEffect(() => {
+    if (currentPlayer) fetchRedCardStatus()
+  }, [currentPlayer, fetchRedCardStatus])
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchLeaderboard(); fetchTodayScores(); fetchChat()
+      if (currentPlayer) fetchRedCardStatus()
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [fetchLeaderboard, fetchTodayScores, fetchChat, fetchRedCardStatus, currentPlayer])
+
+  const selectPlayer = (p: Player) => {
+    setCurrentPlayer(p)
+    notify(`Welcome back, ${p.countryFlag} ${p.name}!`)
+  }
+
+  const createPlayer = async () => {
+    if (!newName.trim() || !newFlag.trim()) return
+    const res = await fetch('/api/players', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName.trim(), countryFlag: newFlag.trim() }),
+    })
+    if (res.ok) {
+      const p = await res.json()
+      await fetchPlayers(); selectPlayer(p); setNewName(''); setNewFlag('')
+    } else { notify('Player already exists!', 'red') }
+  }
+
+  const submitScore = async () => {
+    if (!currentPlayer) return
+    const res = await fetch('/api/scores', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: currentPlayer.id, round1: r1, round2: r2, round3: r3 }),
+    })
+    if (res.ok) {
+      await fetchTodayScores(); await fetchLeaderboard()
+      const t = (parseInt(r1)||0)+(parseInt(r2)||0)+(parseInt(r3)||0)
+      notify(`Score submitted: ${t.toLocaleString()} pts!`)
+      setR1(''); setR2(''); setR3('')
+    } else { notify('Error submitting score', 'red') }
+  }
+
+  const giveRedCard = async (score: Score) => {
+    if (!currentPlayer || redCardStatus.usedToday) return
+    if (score.playerId === currentPlayer.id) { notify("Can't card yourself!", 'red'); return }
+    const res = await fetch('/api/redcards', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ givenById: currentPlayer.id, receivedById: score.playerId, scoreId: score.id }),
+    })
+    if (res.ok) {
+      setRedCardModal(null)
+      notify(`🟥 RED CARD issued to ${score.player.name}!`, 'red')
+      await fetchTodayScores(); await fetchLeaderboard(); await fetchRedCardStatus()
+    } else {
+      const err = await res.json(); notify(err.error || 'Error', 'red')
+    }
+  }
+
+  const postComment = async (scoreId: number) => {
+    if (!currentPlayer || !commentText.trim()) return
+    const res = await fetch('/api/comments', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scoreId, authorName: currentPlayer.name, text: commentText.trim() }),
+    })
+    if (res.ok) { setCommentText(''); await fetchTodayScores() }
+  }
+
+  const sendChat = async () => {
+    if (!currentPlayer || !chatInput.trim()) return
+    await fetch('/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: currentPlayer.id, authorName: currentPlayer.name, text: chatInput.trim() }),
+    })
+    setChatInput(''); await fetchChat()
+  }
+
+  const total = (parseInt(r1)||0)+(parseInt(r2)||0)+(parseInt(r3)||0)
+  const filteredPlayers = players.filter(p =>
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.countryFlag.includes(searchQuery)
+  )
+
+  return (
+    <div className="min-h-screen bg-black">
+
+      {/* ─── RED CARD CONFIRMATION MODAL ─── */}
+      {redCardModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(8px)' }}
+          onClick={() => setRedCardModal(null)}
+        >
+          <div
+            className="w-full max-w-sm bento-card p-6 veo-red-glow animate-slide-in"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-center mb-6">
+              <div className="text-7xl mb-3 animate-pulse">🟥</div>
+              <h2 className="font-display text-4xl font-900 text-veo-red tracking-wider uppercase">Red Card</h2>
+              <p className="font-mono text-xs text-veo-dim mt-2">One card per day. No takebacks.</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-black border border-veo-red/30 mb-6">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-3xl">{redCardModal.score.player.countryFlag}</span>
+                <div className="flex-1">
+                  <div className="font-display text-xl font-700 text-white">{redCardModal.score.player.name}</div>
+                  <div className="font-mono text-[10px] text-veo-dim">Today&apos;s score</div>
+                </div>
+                <div className="text-right">
+                  <div className="font-display text-3xl font-900 text-veo-red">{redCardModal.score.total.toLocaleString()}</div>
+                  <div className="font-mono text-[9px] text-veo-dim">/ 15,000</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[redCardModal.score.round1, redCardModal.score.round2, redCardModal.score.round3].map((r, i) => (
+                  <div key={i} className="text-center p-2 rounded-lg bg-veo-surface border border-veo-border">
+                    <div className="font-display text-sm font-700 text-white">{r.toLocaleString()}</div>
+                    <div className="font-mono text-[8px] text-veo-dim">ROUND {i+1}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setRedCardModal(null)}
+                className="flex-1 py-3 rounded-xl border border-veo-border text-veo-dim font-mono text-sm hover:border-veo-muted transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => giveRedCard(redCardModal.score)}
+                className="flex-1 py-3 rounded-xl bg-veo-red text-white font-display text-xl font-900 tracking-wider hover:bg-red-600 transition-all"
+              >
+                🟥 CARD THEM
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notification toast */}
+      {notification && (
+        <div className={`fixed top-4 right-4 z-50 px-4 py-2 rounded-lg border font-mono text-sm animate-slide-in ${
+          notification.type === 'green'
+            ? 'bg-veo-surface border-veo-green text-veo-green'
+            : 'bg-veo-surface border-veo-red text-veo-red'
+        }`}>
+          {notification.msg}
+        </div>
+      )}
+
+      {/* Header */}
+      <header className="border-b border-veo-border bg-veo-surface/50 backdrop-blur-sm sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded bg-veo-green flex items-center justify-center">
+              <Flag size={16} className="text-black" />
+            </div>
+            <div>
+              <h1 className="font-display text-xl font-900 tracking-wider text-white leading-none">VEO GEO LEAGUE</h1>
+              <p className="font-mono text-[9px] text-veo-dim tracking-widest uppercase">Honor System · No Mercy</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {currentPlayer && (
+              <div className={`px-2.5 py-1.5 rounded-lg border font-mono text-[10px] flex items-center gap-1.5 ${
+                redCardStatus.usedToday
+                  ? 'border-veo-border text-veo-dim bg-black'
+                  : 'border-veo-red/50 text-veo-red bg-veo-red/5 animate-pulse-green'
+              }`}
+              style={!redCardStatus.usedToday ? { animationName: 'none', boxShadow: '0 0 10px rgba(255,48,48,0.2)' } : {}}>
+                🟥 {redCardStatus.usedToday ? 'USED' : 'READY'}
+              </div>
+            )}
+            {currentPlayer ? (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black border border-veo-green/30">
+                <span className="text-lg">{currentPlayer.countryFlag}</span>
+                <span className="font-mono text-xs text-veo-green font-bold">{currentPlayer.name}</span>
+                <button onClick={() => setCurrentPlayer(null)} className="text-veo-dim hover:text-veo-red ml-1"><X size={12} /></button>
+              </div>
+            ) : (
+              <div className="text-veo-dim font-mono text-xs">← Select player</div>
+            )}
+            <button
+              onClick={() => { fetchLeaderboard(); fetchTodayScores(); fetchChat(); if(currentPlayer) fetchRedCardStatus() }}
+              className="p-2 rounded-lg border border-veo-border hover:border-veo-green/30 text-veo-dim hover:text-veo-green transition-colors"
+            ><RefreshCw size={14} /></button>
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-7xl mx-auto px-4 py-6">
+
+        {/* Onboarding */}
+        {!currentPlayer && (
+          <div className="mb-6 bento-card p-5 veo-green-glow">
+            <div className="flex items-center gap-2 mb-4">
+              <Shield size={16} className="text-veo-green" />
+              <span className="font-display text-lg font-700 tracking-wide text-white">PLAYER SIGN-IN</span>
+              <span className="ml-auto font-mono text-xs text-veo-dim">honor system</span>
+            </div>
+            <div className="flex gap-2 mb-4">
+              {['select','new'].map(mode => (
+                <button key={mode} onClick={() => setOnboardMode(mode as 'select'|'new')}
+                  className={`flex-1 py-2 rounded-lg border font-mono text-xs transition-colors ${
+                    onboardMode === mode ? 'border-veo-green bg-veo-green/10 text-veo-green' : 'border-veo-border text-veo-dim hover:border-veo-muted'
+                  }`}>
+                  {mode === 'select' ? 'SELECT PLAYER' : 'NEW PLAYER'}
+                </button>
+              ))}
+            </div>
+            {onboardMode === 'select' ? (
+              <div>
+                <div className="relative mb-3">
+                  <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-veo-dim" />
+                  <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search players..."
+                    className="veo-input w-full pl-8 pr-4 py-2 rounded-lg text-sm" />
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-48 overflow-y-auto">
+                  {filteredPlayers.map(p => (
+                    <button key={p.id} onClick={() => selectPlayer(p)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-veo-border hover:border-veo-green/50 hover:bg-veo-green/5 transition-all text-left">
+                      <span className="text-xl">{p.countryFlag}</span>
+                      <span className="font-mono text-xs text-veo-text truncate">{p.name}</span>
+                    </button>
+                  ))}
+                  {filteredPlayers.length === 0 && <p className="col-span-full text-veo-dim font-mono text-xs text-center py-4">No players found</p>}
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-3 items-end">
+                <div className="flex-shrink-0 w-20">
+                  <label className="block font-mono text-[10px] text-veo-dim mb-1 uppercase tracking-wider">Flag</label>
+                  <input value={newFlag} onChange={e => setNewFlag(e.target.value)} placeholder="🇺🇸"
+                    className="veo-input w-full px-3 py-2 rounded-lg text-xl text-center" />
+                </div>
+                <div className="flex-1">
+                  <label className="block font-mono text-[10px] text-veo-dim mb-1 uppercase tracking-wider">Name</label>
+                  <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key==='Enter'&&createPlayer()}
+                    placeholder="Enter your name..." className="veo-input w-full px-3 py-2 rounded-lg text-sm" />
+                </div>
+                <button onClick={createPlayer} disabled={!newName.trim()||!newFlag.trim()}
+                  className="px-4 py-2 rounded-lg bg-veo-green text-black font-mono text-xs font-bold hover:bg-veo-green/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center gap-1">
+                  <Plus size={14} /> JOIN
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ─── RED CARD PANEL ─── */}
+        {currentPlayer && todayScores.length > 0 && (
+          <div className={`mb-6 bento-card p-4 transition-all ${redCardStatus.usedToday ? '' : 'veo-red-glow'}`}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={16} className="text-veo-red" />
+                <span className="font-display text-lg font-700 tracking-wide text-white uppercase">Daily Red Card</span>
+                <span className={`font-mono text-[10px] px-2 py-0.5 rounded border ${
+                  redCardStatus.usedToday
+                    ? 'border-veo-border text-veo-dim bg-black'
+                    : 'border-veo-red/40 text-veo-red bg-veo-red/10'
+                }`}>
+                  {redCardStatus.usedToday ? '✓ USED TODAY' : '🟥 1 AVAILABLE'}
+                </span>
+              </div>
+              <p className="font-mono text-[10px] text-veo-dim hidden sm:block">
+                {redCardStatus.usedToday ? 'Resets at midnight' : 'Tap a score to issue'}
+              </p>
+            </div>
+
+            {redCardStatus.usedToday ? (
+              <div className="p-3 rounded-xl bg-black border border-veo-border text-center">
+                <p className="font-mono text-xs text-veo-dim">You&apos;ve used your red card today. Come back tomorrow. 😈</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {todayScores.filter(s => s.playerId !== currentPlayer.id).map(score => (
+                  <button
+                    key={score.id}
+                    onClick={() => setRedCardModal({ score })}
+                    className="group p-3 rounded-xl border border-veo-border hover:border-veo-red/60 hover:bg-veo-red/5 transition-all text-left relative overflow-hidden"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-br from-veo-red/0 to-veo-red/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl" />
+                    <div className="relative">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="text-lg">{score.player.countryFlag}</span>
+                        <span className="font-mono text-xs text-veo-text truncate">{score.player.name}</span>
+                      </div>
+                      <div className="font-display text-xl font-900 text-white group-hover:text-veo-red transition-colors">
+                        {score.total.toLocaleString()}
+                      </div>
+                      <div className="font-mono text-[8px] text-veo-dim group-hover:text-veo-red/70 transition-colors mt-0.5">
+                        ISSUE RED CARD 🟥
+                      </div>
+                    </div>
+                  </button>
+                ))}
+                {todayScores.filter(s => s.playerId !== currentPlayer.id).length === 0 && (
+                  <p className="col-span-full font-mono text-xs text-veo-dim text-center py-2">No other players have submitted today</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div className="flex gap-1 mb-6 p-1 bg-veo-surface rounded-xl border border-veo-border w-fit">
+          {[
+            { id: 'leaderboard', icon: <Trophy size={14}/>, label: 'STANDINGS' },
+            { id: 'submit', icon: <Zap size={14}/>, label: 'SUBMIT' },
+            { id: 'chat', icon: <MessageSquare size={14}/>, label: 'TRASH TALK' },
+            { id: 'archive', icon: <Archive size={14}/>, label: 'ARCHIVE' },
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id as typeof activeTab)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-mono text-xs tracking-wider transition-all ${
+                activeTab === tab.id ? 'bg-veo-green text-black font-bold' : 'text-veo-dim hover:text-veo-text'
+              }`}>
+              {tab.icon} {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ─── LEADERBOARD ─── */}
+        {activeTab === 'leaderboard' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 space-y-3">
+              <div className="bento-card p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp size={16} className="text-veo-green" />
+                    <span className="font-display text-lg font-700 tracking-wide text-white uppercase">Monthly Standings</span>
+                  </div>
+                  <div className="font-mono text-[10px] text-veo-dim">TOP 15 DAYS ÷ 15</div>
+                </div>
+                {standings.length === 0 ? (
+                  <div className="text-center py-12 text-veo-dim font-mono text-sm">No scores yet this month. Be the first!</div>
+                ) : (
+                  <div className="space-y-2">
+                    {standings.map((s, i) => (
+                      <div key={s.id} className={`p-3 rounded-xl border transition-all ${
+                        i === 0 ? 'border-veo-green/40 bg-veo-green/5 veo-green-glow' : 'border-veo-border bg-black/30 hover:border-veo-muted'
+                      }`}>
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 text-center font-display text-xl font-900 ${
+                            i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'text-veo-dim'}`}>#{i+1}</div>
+                          <span className="text-2xl">{s.countryFlag}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-display text-base font-700 text-white tracking-wide">{s.name}</span>
+                              {s.isMvp && <span title="Monthly MVP">🏆</span>}
+                              {s.redCardCount > 0 && (
+                                <span className="font-mono text-[10px] text-veo-red bg-veo-red/10 px-1.5 py-0.5 rounded border border-veo-red/20">
+                                  🟥 ×{s.redCardCount}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 h-1.5 rounded-full bg-veo-muted overflow-hidden">
+                              <div className="h-full rounded-full score-bar" style={{
+                                width: `${Math.min((s.monthlyAverage/15000)*100,100)}%`,
+                                background: i===0 ? 'linear-gradient(90deg,#30FF51,#00cc33)' : 'linear-gradient(90deg,#3a4a5a,#2a3a4a)',
+                              }}/>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className={`font-display text-xl font-900 ${i===0?'text-veo-green':'text-white'}`}>
+                              {s.monthlyAverage.toFixed(0)}
+                            </div>
+                            <div className="font-mono text-[9px] text-veo-dim">{s.gamesPlayed} games</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bento-card p-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <Calendar size={14} className="text-veo-green" />
+                  <span className="font-display text-base font-700 tracking-wide text-white uppercase">Today&apos;s Scores</span>
+                </div>
+                {todayScores.length === 0 ? (
+                  <p className="text-veo-dim font-mono text-xs text-center py-6">No scores today yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {todayScores.map((score, i) => (
+                      <div key={score.id} className="animate-fade-in">
+                        <div
+                          className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                            expandedScore===score.id ? 'border-veo-green/30 bg-veo-green/5' : 'border-veo-border hover:border-veo-muted'
+                          }`}
+                          onClick={() => setExpandedScore(expandedScore===score.id?null:score.id)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              {i===0 && <span title="Today MVP">🏅</span>}
+                              <span>{score.player.countryFlag}</span>
+                              <span className="font-mono text-xs text-veo-text">{score.player.name}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {score._count.redCards > 0 && (
+                                <span className="text-[10px] font-mono text-veo-red">🟥×{score._count.redCards}</span>
+                              )}
+                              <span className={`font-display text-base font-700 ${i===0?'text-veo-green':'text-white'}`}>
+                                {score.total.toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex gap-1 mt-1.5">
+                            {[score.round1,score.round2,score.round3].map((r,ri) => (
+                              <div key={ri} className="flex-1 h-1 rounded-full bg-veo-muted overflow-hidden">
+                                <div className="h-full rounded-full" style={{
+                                  width:`${(r/5000)*100}%`,
+                                  background:r>=4500?'#30FF51':r>=3000?'#60a0c0':'#3a4a5a'
+                                }}/>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        {expandedScore===score.id && (
+                          <div className="ml-2 mt-1 p-3 rounded-xl bg-veo-surface border border-veo-border animate-slide-in">
+                            <div className="flex gap-2 mb-2 font-mono text-[10px] text-veo-dim">
+                              <span>R1: {score.round1.toLocaleString()}</span>
+                              <span>R2: {score.round2.toLocaleString()}</span>
+                              <span>R3: {score.round3.toLocaleString()}</span>
+                            </div>
+                            {score.comments.length > 0 && (
+                              <div className="space-y-1.5 mb-2">
+                                {score.comments.map(c => (
+                                  <div key={c.id} className="p-2 bg-black rounded-lg border border-veo-border">
+                                    <span className="font-mono text-[9px] text-veo-green">{c.authorName}: </span>
+                                    <span className="font-mono text-[10px] text-veo-text">{c.text}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {currentPlayer && (
+                              <div className="flex gap-1">
+                                <input value={commentText} onChange={e=>setCommentText(e.target.value)}
+                                  onKeyDown={e=>e.key==='Enter'&&postComment(score.id)}
+                                  placeholder="Post-match comment..." className="veo-input flex-1 px-2 py-1.5 rounded-lg text-[10px]"/>
+                                <button onClick={()=>postComment(score.id)}
+                                  className="px-2 py-1.5 rounded-lg bg-veo-green/20 border border-veo-green/30 text-veo-green hover:bg-veo-green/30 transition-colors">
+                                  <Send size={10}/>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="bento-card p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Users size={14} className="text-veo-green" />
+                  <span className="font-display text-base font-700 tracking-wide text-white uppercase">League Stats</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2 bg-black rounded-lg border border-veo-border text-center">
+                    <div className="font-display text-2xl font-900 text-veo-green">{players.length}</div>
+                    <div className="font-mono text-[9px] text-veo-dim uppercase">Players</div>
+                  </div>
+                  <div className="p-2 bg-black rounded-lg border border-veo-border text-center">
+                    <div className="font-display text-2xl font-900 text-white">{todayScores.length}</div>
+                    <div className="font-mono text-[9px] text-veo-dim uppercase">Today</div>
+                  </div>
+                  {standings[0] && (
+                    <div className="col-span-2 p-2 bg-black rounded-lg border border-veo-green/20 text-center">
+                      <div className="font-mono text-[9px] text-veo-dim uppercase mb-1">Current Leader</div>
+                      <div className="font-display text-base font-700 text-veo-green">{standings[0].countryFlag} {standings[0].name}</div>
+                      <div className="font-mono text-[10px] text-veo-dim">avg {standings[0].monthlyAverage.toFixed(0)}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── SUBMIT ─── */}
+        {activeTab === 'submit' && (
+          <div className="max-w-md mx-auto">
+            <div className="bento-card p-6">
+              <div className="flex items-center gap-2 mb-6">
+                <Zap size={16} className="text-veo-green"/>
+                <span className="font-display text-xl font-700 tracking-wide text-white uppercase">Submit Daily Score</span>
+              </div>
+              {!currentPlayer ? (
+                <div className="text-center py-8">
+                  <p className="font-mono text-sm text-veo-dim mb-2">Select a player first</p>
+                  <button onClick={()=>setActiveTab('leaderboard')} className="text-veo-green font-mono text-xs hover:underline">← Back to sign in</button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 p-3 bg-black rounded-xl border border-veo-green/30 mb-6">
+                    <span className="text-2xl">{currentPlayer.countryFlag}</span>
+                    <span className="font-display text-lg font-700 text-veo-green">{currentPlayer.name}</span>
+                    <Star size={12} className="text-veo-green ml-auto"/>
+                  </div>
+                  <div className="space-y-4 mb-6">
+                    {[{label:'Round 1',val:r1,set:setR1},{label:'Round 2',val:r2,set:setR2},{label:'Round 3',val:r3,set:setR3}].map(({label,val,set})=>(
+                      <div key={label}>
+                        <label className="block font-mono text-[10px] text-veo-dim mb-1.5 uppercase tracking-wider">{label} <span className="text-veo-muted">/ 5,000</span></label>
+                        <input type="number" min={0} max={5000} value={val} onChange={e=>set(e.target.value)} placeholder="0"
+                          className="veo-input w-full px-4 py-3 rounded-xl text-2xl font-display font-700 text-center"/>
+                        <div className="mt-1.5 h-1.5 rounded-full bg-veo-muted overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-300" style={{
+                            width:`${Math.min(((parseInt(val)||0)/5000)*100,100)}%`,
+                            background:(parseInt(val)||0)>=4500?'#30FF51':'#3a4a5a'
+                          }}/>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="p-4 rounded-xl border border-veo-green/30 bg-veo-green/5 mb-6 text-center">
+                    <div className="font-mono text-[10px] text-veo-dim uppercase tracking-wider mb-1">Total Score</div>
+                    <div className={`font-display text-5xl font-900 ${total>0?'text-veo-green':'text-veo-muted'}`}>{total.toLocaleString()}</div>
+                    <div className="font-mono text-[10px] text-veo-dim mt-1">/ 15,000</div>
+                  </div>
+                  <button onClick={submitScore} disabled={total===0}
+                    className="w-full py-3 rounded-xl bg-veo-green text-black font-display text-lg font-900 tracking-wider hover:bg-veo-green/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2">
+                    <Check size={18}/> SUBMIT SCORE
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ─── CHAT ─── */}
+        {activeTab === 'chat' && (
+          <div className="max-w-2xl mx-auto">
+            <div className="bento-card flex flex-col" style={{height:'70vh'}}>
+              <div className="flex items-center gap-2 p-4 border-b border-veo-border">
+                <MessageSquare size={16} className="text-veo-green"/>
+                <span className="font-display text-xl font-700 tracking-wide text-white uppercase">League Chat</span>
+                <span className="ml-auto font-mono text-[10px] text-veo-dim">TRASH TALK CENTRAL</span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {chatMessages.length === 0 ? (
+                  <div className="text-center py-12 text-veo-dim font-mono text-sm">No messages yet. Start the trash talk!</div>
+                ) : chatMessages.map(msg => (
+                  <div key={msg.id} className="animate-fade-in">
+                    <div className="flex items-start gap-2">
+                      <div className="flex-shrink-0">{msg.player && <span className="text-xl">{msg.player.countryFlag}</span>}</div>
+                      <div className="flex-1">
+                        <div className="flex items-baseline gap-2 mb-1">
+                          <span className="font-mono text-[10px] text-veo-green font-bold">{msg.authorName}</span>
+                          <span className="font-mono text-[9px] text-veo-dim">
+                            {new Date(msg.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+                          </span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-black border border-veo-border font-mono text-xs text-veo-text leading-relaxed">
+                          {msg.text}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div ref={chatEndRef}/>
+              </div>
+              <div className="p-4 border-t border-veo-border">
+                {!currentPlayer ? (
+                  <p className="text-center font-mono text-xs text-veo-dim">Sign in to chat</p>
+                ) : (
+                  <div className="flex gap-2">
+                    <input value={chatInput} onChange={e=>setChatInput(e.target.value)}
+                      onKeyDown={e=>e.key==='Enter'&&sendChat()}
+                      placeholder={`Trash talk as ${currentPlayer.name}...`}
+                      className="veo-input flex-1 px-4 py-2.5 rounded-xl text-sm"/>
+                    <button onClick={sendChat} disabled={!chatInput.trim()}
+                      className="px-4 py-2.5 rounded-xl bg-veo-green text-black font-mono font-bold hover:bg-veo-green/90 disabled:opacity-30 transition-all">
+                      <Send size={14}/>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── ARCHIVE ─── */}
+        {activeTab === 'archive' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="bento-card p-4">
+              <div className="flex items-center gap-2 mb-4">
+                <Archive size={14} className="text-veo-green"/>
+                <span className="font-display text-lg font-700 tracking-wide text-white uppercase">Season Archive</span>
+              </div>
+              {archiveMonths.length === 0 ? (
+                <p className="text-veo-dim font-mono text-xs text-center py-6">No past seasons yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {archiveMonths.map(m => (
+                    <button key={`${m.year}-${m.month}`}
+                      onClick={() => { setSelectedArchive(m); fetchLeaderboard(m.year,m.month) }}
+                      className={`w-full text-left px-3 py-2.5 rounded-xl border font-mono text-sm transition-all ${
+                        selectedArchive?.year===m.year&&selectedArchive?.month===m.month
+                          ? 'border-veo-green/40 bg-veo-green/10 text-veo-green'
+                          : 'border-veo-border text-veo-text hover:border-veo-muted'
+                      }`}>
+                      <div className="flex items-center justify-between">
+                        <span>{m.label}</span>
+                        <ChevronDown size={12} className={selectedArchive?.year===m.year&&selectedArchive?.month===m.month?'rotate-180':''}/>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="lg:col-span-2 bento-card p-4">
+              {!selectedArchive ? (
+                <div className="flex items-center justify-center h-full min-h-48">
+                  <p className="font-mono text-sm text-veo-dim">← Select a month to view</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Trophy size={14} className="text-veo-green"/>
+                    <span className="font-display text-lg font-700 tracking-wide text-white uppercase">{selectedArchive.label} Results</span>
+                  </div>
+                  <div className="space-y-2">
+                    {archiveStandings.map((s,i) => (
+                      <div key={s.id} className={`p-3 rounded-xl border flex items-center gap-3 ${i===0?'border-veo-green/30 bg-veo-green/5':'border-veo-border'}`}>
+                        <div className={`w-8 text-center font-display text-xl font-900 ${i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'text-veo-dim'}`}>#{i+1}</div>
+                        <span className="text-2xl">{s.countryFlag}</span>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-display text-base font-700 text-white">{s.name}</span>
+                            {s.isMvp && <span>🏆</span>}
+                            {s.redCardCount > 0 && (
+                              <span className="font-mono text-[10px] text-veo-red bg-veo-red/10 px-1.5 py-0.5 rounded border border-veo-red/20">🟥 ×{s.redCardCount}</span>
+                            )}
+                          </div>
+                          <span className="font-mono text-[10px] text-veo-dim">{s.gamesPlayed} games played</span>
+                        </div>
+                        <div className="text-right">
+                          <div className={`font-display text-xl font-900 ${i===0?'text-veo-green':'text-white'}`}>{s.monthlyAverage.toFixed(0)}</div>
+                          <div className="font-mono text-[9px] text-veo-dim">avg</div>
+                        </div>
+                      </div>
+                    ))}
+                    {archiveStandings.length===0&&<p className="text-center text-veo-dim font-mono text-sm py-6">No data for this month</p>}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <footer className="border-t border-veo-border mt-12 py-4 text-center">
+        <p className="font-mono text-[10px] text-veo-dim tracking-widest uppercase">Veo Geo League · Powered by Honor System · No Excuses</p>
+      </footer>
+    </div>
+  )
+}
