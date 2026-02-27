@@ -163,10 +163,18 @@ const MORNING_OPENERS = [
   'A new day. A fresh slate. Same leaderboard, different humiliations.',
   "Yesterday is gone. Today's disasters are entirely new.",
   'Wake up. Play golf. Post your score. Get carded. Repeat.',
-  'The league doesn\'t sleep but it does get up at 14:00.',
+  "The league doesn't sleep but it does get up at 14:00.",
   'Another opportunity to either shine or quietly disappear.',
   'Submission window opens at 14:00. Start mentally preparing.',
   "It's a new day in the league. Someone's getting carded. Not saying who.",
+  'Philip has already checked three bins this morning and is mentally prepared. Are you?',
+  "Reminder: Karolina knows exactly which countries you're not supposed to be doing business with. She's watching.",
+  "Leo is loading up his best score from last week and hoping nobody notices. We notice, Leo.",
+  "Ollie has been practising since 6am. Ollie has also been telling everyone about it since 6am.",
+  "Philip found something suspicious in the kitchen bin and has filed a full incident report. Meanwhile, scores open at 14:00.",
+  "Karolina could tell you where that export is going. She won't. But she could.",
+  "If Leo's score seems unusually good today, just know that the rest of us have questions.",
+  "Ollie has optimised his setup, reviewed the leaderboard, and already written a post-game analysis. It's 9am.",
 ]
 
 export function morningOpener(): string {
