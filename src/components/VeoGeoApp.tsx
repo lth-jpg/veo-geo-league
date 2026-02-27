@@ -344,6 +344,10 @@ export default function VeoGeoApp() {
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.countryFlag.includes(searchQuery)
   )
 
+  // Build playerId → formStreak map from standings for use in the feed
+  const formStreakMap = new Map<number, 'hot' | 'cold' | null>()
+  standings.forEach(s => formStreakMap.set(s.id, s.formStreak))
+
   return (
     <div className="min-h-screen bg-black">
 
@@ -720,6 +724,7 @@ export default function VeoGeoApp() {
                   <div className="space-y-2">
                     {todayScores.map((score, i) => {
                       const isClutch = score.total >= 14800
+                      const feedStreak = formStreakMap.get(score.playerId) ?? null
                       return (
                         <motion.div
                           key={score.id}
@@ -742,6 +747,7 @@ export default function VeoGeoApp() {
                                 {i===0 && <span title="Today MVP">🏅</span>}
                                 <span>{score.player.countryFlag}</span>
                                 <span className="font-mono text-xs text-veo-text">{score.player.name}</span>
+                                <FormBadge streak={feedStreak} />
                                 <ScoreTag total={score.total} />
                                 <PositionChangeBadge change={score.positionChange} />
                               </div>
