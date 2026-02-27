@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getTodayRange } from '@/lib/utils'
-
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
@@ -32,6 +31,7 @@ export async function POST(req: NextRequest) {
     },
     include: { givenBy: true, receivedBy: true },
   })
+
   return NextResponse.json(rc)
 }
 
