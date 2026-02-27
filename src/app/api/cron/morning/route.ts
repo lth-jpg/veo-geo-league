@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     .filter(p => p.games > 0)
     .sort((a, b) => b.avg - a.avg)
 
-  const leader = standings[0]
+  const top3 = standings.slice(0, 3)
   const appUrl = process.env.APP_URL ?? ''
 
   // Danish time: CET (UTC+1 winter) / CEST (UTC+2 summer)
@@ -57,12 +57,19 @@ export async function POST(req: NextRequest) {
     ? `${hoursLeft}h ${minsLeft}m to go`
     : `${minsLeft} minutes to go`
 
+  const MEDALS = ['🥇', '🥈', '🥉']
+  const standingsText = top3.length > 0
+    ? '*Monthly Standings*\n' + top3.map((p, i) =>
+        `${MEDALS[i]} ${p.flag} *${p.name}* — avg ${p.avg.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
+      ).join('\n')
+    : null
+
   const blocks = [
     veoHeader('⛳ VEO GEO LEAGUE — Morning Briefing'),
     veoSection(morningOpener()),
     veoDivider(),
     veoSection(`*Scores close at 14:00* — ${countdownText}`),
-    ...(leader ? [veoSection(`Monthly leader going into today: *${leader.flag} ${leader.name}* — avg ${leader.avg.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`)] : []),
+    ...(standingsText ? [veoSection(standingsText)] : []),
     veoDivider(),
     veoContext(appUrl ? `Submit at ${appUrl}` : 'Submit your score at 14:00'),
   ]
