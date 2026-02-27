@@ -349,13 +349,38 @@ export default function VeoGeoApp() {
               </div>
             ) : (
               <div className="space-y-3">
-                <p className="font-mono text-[10px] text-veo-dim">Pick any emoji to represent you — a flag, a vibe, whatever fits.</p>
+                <p className="font-mono text-[10px] text-veo-dim">Pick any emoji to represent you — flag, vibe, whatever fits.</p>
+
+                {/* Emoji quick-pick grid */}
+                <div>
+                  <p className="font-mono text-[9px] text-veo-dim mb-1.5 uppercase tracking-wider">Quick pick</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['🇺🇸','🇬🇧','🇩🇪','🇫🇷','🇪🇸','🇵🇹','🇮🇹','🇳🇱','🇧🇪','🇸🇪','🇳🇴','🇩🇰','🇵🇱','🇧🇷','🇦🇷','🇲🇽','🇯🇵','🇰🇷','🇨🇳','🇦🇺','🇨🇦','🇿🇦','🇳🇬','🎯','⚽','🔥','👾','🐉','🦅','💀'].map(e => (
+                      <button
+                        key={e}
+                        type="button"
+                        onClick={() => setNewFlag(e)}
+                        className={`text-xl w-9 h-9 flex items-center justify-center rounded-lg border transition-all ${
+                          newFlag === e
+                            ? 'border-veo-green bg-veo-green/20'
+                            : 'border-veo-border hover:border-veo-muted bg-black'
+                        }`}
+                      >
+                        {e}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="flex gap-3 items-end">
                   <div className="flex-shrink-0 w-20">
-                    <label className="block font-mono text-[10px] text-veo-dim mb-1 uppercase tracking-wider">Emoji</label>
-                    <input value={newFlag} onChange={e => setNewFlag(e.target.value)} placeholder="🇺🇸"
-                      className="veo-input w-full px-3 py-2 rounded-lg text-xl text-center" />
-                    <p className="font-mono text-[9px] text-veo-dim mt-1 text-center">🇺🇸🎯⚽🌍 …</p>
+                    <label className="block font-mono text-[10px] text-veo-dim mb-1 uppercase tracking-wider">Selected</label>
+                    <input
+                      value={newFlag}
+                      onChange={e => setNewFlag(e.target.value)}
+                      placeholder="?"
+                      className="veo-input w-full px-3 py-2 rounded-lg text-2xl text-center"
+                    />
                   </div>
                   <div className="flex-1">
                     <label className="block font-mono text-[10px] text-veo-dim mb-1 uppercase tracking-wider">Name</label>
@@ -367,6 +392,7 @@ export default function VeoGeoApp() {
                     <Plus size={14} /> JOIN
                   </button>
                 </div>
+                <p className="font-mono text-[9px] text-veo-dim">Not in the list? Paste any emoji into the selected box above.</p>
               </div>
             )}
           </div>
