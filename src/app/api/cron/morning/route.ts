@@ -18,6 +18,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // Only run Mon–Fri (0=Sun, 6=Sat in UTC)
+  const dayOfWeek = new Date().getUTCDay()
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    return NextResponse.json({ ok: true, skipped: 'weekend' })
+  }
+
   // Get current monthly leader
   const { start, end } = getMonthRange()
   const players = await prisma.player.findMany({
