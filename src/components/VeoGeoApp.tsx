@@ -184,31 +184,52 @@ export default function VeoGeoApp() {
   }
 
   const fetchPlayers = useCallback(async () => {
-    const res = await fetch('/api/players')
-    setPlayers(await res.json())
+    try {
+      const res = await fetch('/api/players')
+      if (!res.ok) return
+      const data = await res.json()
+      if (Array.isArray(data)) setPlayers(data)
+    } catch { /* ignore */ }
   }, [])
 
   const fetchLeaderboard = useCallback(async (year?: number, month?: number) => {
-    const params = year !== undefined ? `?year=${year}&month=${month}` : ''
-    const res = await fetch(`/api/leaderboard${params}`)
-    const data = await res.json()
-    if (year !== undefined) setArchiveStandings(data.standings)
-    else setStandings(data.standings)
+    try {
+      const params = year !== undefined ? `?year=${year}&month=${month}` : ''
+      const res = await fetch(`/api/leaderboard${params}`)
+      if (!res.ok) return
+      const data = await res.json()
+      if (Array.isArray(data.standings)) {
+        if (year !== undefined) setArchiveStandings(data.standings)
+        else setStandings(data.standings)
+      }
+    } catch { /* ignore */ }
   }, [])
 
   const fetchTodayScores = useCallback(async () => {
-    const res = await fetch('/api/scores')
-    setTodayScores(await res.json())
+    try {
+      const res = await fetch('/api/scores')
+      if (!res.ok) return
+      const data = await res.json()
+      if (Array.isArray(data)) setTodayScores(data)
+    } catch { /* ignore */ }
   }, [])
 
   const fetchChat = useCallback(async () => {
-    const res = await fetch('/api/chat')
-    setChatMessages(await res.json())
+    try {
+      const res = await fetch('/api/chat')
+      if (!res.ok) return
+      const data = await res.json()
+      if (Array.isArray(data)) setChatMessages(data)
+    } catch { /* ignore */ }
   }, [])
 
   const fetchArchive = useCallback(async () => {
-    const res = await fetch('/api/archive')
-    setArchiveMonths(await res.json())
+    try {
+      const res = await fetch('/api/archive')
+      if (!res.ok) return
+      const data = await res.json()
+      if (Array.isArray(data)) setArchiveMonths(data)
+    } catch { /* ignore */ }
   }, [])
 
   const fetchRedCardStatus = useCallback(async () => {
@@ -218,9 +239,12 @@ export default function VeoGeoApp() {
   }, [currentPlayer])
 
   const fetchBreakingNews = useCallback(async () => {
-    const res = await fetch('/api/breaking-news')
-    const items: BreakingNewsItem[] = await res.json()
-    setBreakingNews(items)
+    try {
+      const res = await fetch('/api/breaking-news')
+      if (!res.ok) return
+      const data = await res.json()
+      if (Array.isArray(data)) setBreakingNews(data)
+    } catch { /* ignore */ }
   }, [])
 
   useEffect(() => {
@@ -361,15 +385,17 @@ export default function VeoGeoApp() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 overflow-y-auto"
             style={{ background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(8px)' }}
             onClick={() => { setRedCardModal(null); setRedCardReason('') }}
           >
+            <div className="flex min-h-full items-center justify-center p-4">
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
               className="w-full max-w-sm bento-card p-6 veo-red-glow"
+              style={{ overflow: 'visible' }}
               onClick={e => e.stopPropagation()}
             >
               <div className="text-center mb-6">
@@ -426,6 +452,7 @@ export default function VeoGeoApp() {
                 </button>
               </div>
             </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
