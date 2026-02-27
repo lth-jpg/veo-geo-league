@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getTodayRange } from '@/lib/utils'
-import { postToSlack, veoHeader, veoSection, veoContext } from '@/lib/slack'
-import { redCardLine } from '@/lib/commentary'
-
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
@@ -34,17 +31,6 @@ export async function POST(req: NextRequest) {
     },
     include: { givenBy: true, receivedBy: true },
   })
-
-  // Slack real-time red card ping
-  const reasonText = rc.reason ? `\n_Reason: "${rc.reason}"_` : ''
-  await postToSlack(
-    [
-      veoHeader('🟥 RED CARD ISSUED'),
-      veoSection(redCardLine(rc.givenBy.name, rc.receivedBy.name) + reasonText),
-      veoContext(`${rc.givenBy.countryFlag} ${rc.givenBy.name} → ${rc.receivedBy.countryFlag} ${rc.receivedBy.name}`),
-    ],
-    `🟥 ${rc.givenBy.name} carded ${rc.receivedBy.name}${rc.reason ? `: "${rc.reason}"` : ''}`
-  )
 
   return NextResponse.json(rc)
 }
