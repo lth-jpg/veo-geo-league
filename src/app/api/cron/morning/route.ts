@@ -61,13 +61,13 @@ export async function POST(req: NextRequest) {
     veoHeader('⛳ VEO GEO LEAGUE — Morning Briefing'),
     veoSection(morningOpener()),
     veoDivider(),
-    veoSection(`*Scores open at 14:00 🇩🇰* — ${countdownText}`),
+    veoSection(`*Scores close at 14:00* — ${countdownText}`),
     ...(leader ? [veoSection(`Monthly leader going into today: *${leader.flag} ${leader.name}* — avg ${leader.avg.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`)] : []),
     veoDivider(),
     veoContext(appUrl ? `Submit at ${appUrl}` : 'Submit your score at 14:00'),
   ]
 
-  await postToSlack(blocks, `⛳ VEO GEO LEAGUE — Scores open at 14:00. ${countdownText}.`)
+  await postToSlack(blocks, `⛳ VEO GEO LEAGUE — Scores close at 14:00. ${countdownText}.`)
 
   return NextResponse.json({ ok: true })
 }
