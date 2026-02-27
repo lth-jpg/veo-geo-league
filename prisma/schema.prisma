@@ -14,22 +14,24 @@ model Player {
   countryFlag String    // Emoji flag
   createdAt   DateTime  @default(now())
 
-  scores      Score[]
-  redCardsGiven    RedCard[] @relation("GivenBy")
-  redCardsReceived RedCard[] @relation("ReceivedBy")
-  chatMessages ChatMessage[]
+  scores           Score[]
+  redCardsGiven    RedCard[]      @relation("GivenBy")
+  redCardsReceived RedCard[]      @relation("ReceivedBy")
+  chatMessages     ChatMessage[]
+  breakingNews     BreakingNews[]
 }
 
 model Score {
-  id        Int      @id @default(autoincrement())
-  playerId  Int
-  player    Player   @relation(fields: [playerId], references: [id])
-  round1    Int      @default(0) // 0-5000
-  round2    Int      @default(0)
-  round3    Int      @default(0)
-  total     Int      @default(0) // sum of rounds
-  date      DateTime @default(now())
-  createdAt DateTime @default(now())
+  id             Int      @id @default(autoincrement())
+  playerId       Int
+  player         Player   @relation(fields: [playerId], references: [id])
+  round1         Int      @default(0) // 0-5000
+  round2         Int      @default(0)
+  round3         Int      @default(0)
+  total          Int      @default(0) // sum of rounds
+  positionChange Int?     // leaderboard position change on submission (+up, -down)
+  date           DateTime @default(now())
+  createdAt      DateTime @default(now())
 
   redCards  RedCard[]
   comments  Comment[]
@@ -39,19 +41,33 @@ model Score {
 }
 
 model RedCard {
-  id          Int      @id @default(autoincrement())
-  givenById   Int
-  givenBy     Player   @relation("GivenBy", fields: [givenById], references: [id])
+  id           Int      @id @default(autoincrement())
+  givenById    Int
+  givenBy      Player   @relation("GivenBy", fields: [givenById], references: [id])
   receivedById Int
-  receivedBy  Player   @relation("ReceivedBy", fields: [receivedById], references: [id])
-  scoreId     Int
-  score       Score    @relation(fields: [scoreId], references: [id])
-  date        DateTime @default(now())
-  createdAt   DateTime @default(now())
+  receivedBy   Player   @relation("ReceivedBy", fields: [receivedById], references: [id])
+  scoreId      Int
+  score        Score    @relation(fields: [scoreId], references: [id])
+  reason       String?  // optional reason text
+  date         DateTime @default(now())
+  createdAt    DateTime @default(now())
 
   @@unique([givenById, date]) // one red card per day per giver
   @@index([receivedById])
   @@index([scoreId])
+}
+
+model BreakingNews {
+  id        Int      @id @default(autoincrement())
+  type      String   // 'shame' | 'takeover'
+  message   String
+  playerId  Int
+  player    Player   @relation(fields: [playerId], references: [id])
+  expiresAt DateTime // 1 hour after creation
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([expiresAt])
 }
 
 model Comment {
