@@ -1,0 +1,26 @@
+name: Auto-create PR for Claude branches
+
+on:
+  push:
+    branches:
+      - claude/**
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create PR if one doesn't exist
+        run: |
+          gh pr create \
+            --base main \
+            --head "${{ github.ref_name }}" \
+            --title "$(git log -1 --pretty=%s)" \
+            --body "Auto-generated PR from Claude push." \
+          || echo "PR already exists, skipping."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
