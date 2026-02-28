@@ -25,6 +25,26 @@ export async function POST(req: NextRequest) {
   }
 }
 
+export async function PATCH(req: NextRequest) {
+  const { id, name, countryFlag } = await req.json()
+  if (!id) return NextResponse.json({ error: 'Player ID required' }, { status: 400 })
+
+  const data: Record<string, string> = {}
+  if (name?.trim()) data.name = name.trim()
+  if (countryFlag?.trim()) data.countryFlag = countryFlag.trim()
+
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
+  }
+
+  try {
+    const player = await prisma.player.update({ where: { id }, data })
+    return NextResponse.json(player)
+  } catch {
+    return NextResponse.json({ error: 'Name already taken' }, { status: 409 })
+  }
+}
+
 export async function DELETE(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const id = parseInt(searchParams.get('id') || '')

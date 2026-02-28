@@ -6,7 +6,7 @@ import {
   Trophy, Flag, MessageSquare, Zap, ChevronDown, Search,
   Send, Archive, RefreshCw, Star, X, Plus, Check,
   TrendingUp, Users, Calendar, Shield, AlertTriangle,
-  ArrowUp, ArrowDown,
+  ArrowUp, ArrowDown, Pencil,
 } from 'lucide-react'
 
 type Player = { id: number; name: string; countryFlag: string }
@@ -181,6 +181,12 @@ export default function VeoGeoApp() {
   const [pinModal, setPinModal] = useState<{ player: Player } | null>(null)
   const [pinInput, setPinInput] = useState('')
   const [pinError, setPinError] = useState(false)
+
+  // ── Edit profile modal ────────────────────────────────────────────────────
+  const [editProfileOpen, setEditProfileOpen] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editFlag, setEditFlag] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
 
   // ── League config (public) ────────────────────────────────────────────────
   const [leagueConfig, setLeagueConfig] = useState<LeagueConfig>({ isDoubleDay: false, activeDays: [], scoreCount: 15, daysRemaining: null, totalActiveDays: 0 })
@@ -497,6 +503,37 @@ export default function VeoGeoApp() {
 
   const isLeoAdmin = currentPlayer?.name.toLowerCase() === 'leo'
 
+  const openEditProfile = () => {
+    if (!currentPlayer) return
+    setEditName(currentPlayer.name)
+    setEditFlag(currentPlayer.countryFlag)
+    setEditProfileOpen(true)
+  }
+
+  const saveProfile = async () => {
+    if (!currentPlayer || !editName.trim() || !editFlag.trim()) return
+    setEditSaving(true)
+    try {
+      const res = await fetch('/api/players', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: currentPlayer.id, name: editName.trim(), countryFlag: editFlag.trim() }),
+      })
+      if (res.ok) {
+        const updated = await res.json()
+        setCurrentPlayer(updated)
+        await fetchPlayers()
+        setEditProfileOpen(false)
+        notify(`Profile updated!`)
+      } else {
+        const err = await res.json()
+        notify(err.error || 'Failed to update profile', 'red')
+      }
+    } catch { notify('Failed to update profile', 'red') } finally {
+      setEditSaving(false)
+    }
+  }
+
   const deletePlayer = async (playerId: number, playerName: string) => {
     if (!isLeoAdmin) return
     const res = await fetch(`/api/players?id=${playerId}&adminName=${encodeURIComponent(currentPlayer!.name)}`, {
@@ -700,6 +737,94 @@ export default function VeoGeoApp() {
         )}
       </AnimatePresence>
 
+      {/* ─── EDIT PROFILE MODAL ─── */}
+      <AnimatePresence>
+        {editProfileOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            style={{ background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(10px)' }}
+            onClick={() => setEditProfileOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="w-full max-w-sm bento-card p-6"
+              style={{ borderColor: 'rgba(48,255,81,0.25)', boxShadow: '0 0 40px rgba(48,255,81,0.1)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="text-center mb-5">
+                <div className="text-4xl mb-2">{editFlag || '?'}</div>
+                <h2 className="font-display text-2xl font-900 text-veo-green tracking-wider uppercase">Edit Profile</h2>
+                <p className="font-mono text-[10px] text-veo-dim mt-1">Change your name or emoji</p>
+              </div>
+
+              {/* Emoji quick-pick */}
+              <div className="mb-4">
+                <p className="font-mono text-[9px] text-veo-dim mb-1.5 uppercase tracking-wider">Quick pick</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {['🇺🇸','🇬🇧','🇩🇪','🇫🇷','🇪🇸','🇵🇹','🇮🇹','🇳🇱','🇧🇪','🇸🇪','🇳🇴','🇩🇰','🇵🇱','🇧🇷','🇦🇷','🇲🇽','🇯🇵','🇰🇷','🇨🇳','🇦🇺','🇨🇦','🇿🇦','🇳🇬','🎯','⚽','🔥','👾','🐉','🦅','💀'].map(e => (
+                    <button
+                      key={e}
+                      type="button"
+                      onClick={() => setEditFlag(e)}
+                      className={`text-xl w-9 h-9 flex items-center justify-center rounded-lg border transition-all ${
+                        editFlag === e
+                          ? 'border-veo-green bg-veo-green/20'
+                          : 'border-veo-border hover:border-veo-muted bg-black'
+                      }`}
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3 items-end mb-4">
+                <div className="flex-shrink-0 w-20">
+                  <label className="block font-mono text-[10px] text-veo-dim mb-1 uppercase tracking-wider">Emoji</label>
+                  <input
+                    value={editFlag}
+                    onChange={e => setEditFlag(e.target.value)}
+                    placeholder="?"
+                    className="veo-input w-full px-3 py-2 rounded-lg text-2xl text-center"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block font-mono text-[10px] text-veo-dim mb-1 uppercase tracking-wider">Name</label>
+                  <input
+                    value={editName}
+                    onChange={e => setEditName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && saveProfile()}
+                    placeholder="Your name..."
+                    className="veo-input w-full px-3 py-2 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setEditProfileOpen(false)}
+                  className="flex-1 py-3 rounded-xl border border-veo-border text-veo-dim font-mono text-sm hover:border-veo-muted transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveProfile}
+                  disabled={editSaving || !editName.trim() || !editFlag.trim()}
+                  className="flex-1 py-3 rounded-xl bg-veo-green text-black font-display text-lg font-900 tracking-wider hover:bg-veo-green/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  {editSaving ? 'Saving...' : '✓ Save'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ─── DOUBLE POINTS BANNER ─── */}
       {leagueConfig.isDoubleDay && (
         <div
@@ -781,7 +906,8 @@ export default function VeoGeoApp() {
                 {isLeoAdmin && (
                   <span className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-veo-red/40 text-veo-red bg-veo-red/10 leading-none">ADMIN</span>
                 )}
-                <button onClick={() => setCurrentPlayer(null)} className="text-veo-dim hover:text-veo-red ml-1"><X size={12} /></button>
+                <button onClick={openEditProfile} title="Edit name / emoji" className="text-veo-dim hover:text-veo-green ml-1 transition-colors"><Pencil size={11} /></button>
+                <button onClick={() => setCurrentPlayer(null)} className="text-veo-dim hover:text-veo-red"><X size={12} /></button>
               </div>
             ) : (
               <div className="text-veo-dim font-mono text-xs">← Select player</div>
