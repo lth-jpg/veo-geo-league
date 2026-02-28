@@ -206,6 +206,8 @@ export default function VeoGeoApp() {
   // ── Admin config panel ────────────────────────────────────────────────────
   const [adminConfig, setAdminConfig] = useState<{ activeDays: string[]; scoreCount: number }>({ activeDays: [], scoreCount: 15 })
   const [configSaving, setConfigSaving] = useState(false)
+  const [simulatedDate, setSimulatedDate] = useState<string>('')
+  const [simDateSaving, setSimDateSaving] = useState(false)
 
   // Load dismissed news IDs from localStorage on mount
   useEffect(() => {
@@ -366,6 +368,7 @@ export default function VeoGeoApp() {
       if (!res.ok) return
       const data = await res.json()
       setAdminConfig({ activeDays: data.activeDays ?? [], scoreCount: data.scoreCount ?? 15 })
+      setSimulatedDate(data.simulatedDate ?? '')
     } catch { /* ignore */ }
   }, [currentPlayer])
 
@@ -386,6 +389,26 @@ export default function VeoGeoApp() {
       }
     } catch { notify('Failed to save config', 'red') } finally {
       setConfigSaving(false)
+    }
+  }
+
+  const saveSimulatedDate = async (dateValue: string | null) => {
+    if (!currentPlayer) return
+    setSimDateSaving(true)
+    try {
+      const res = await fetch('/api/admin/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminName: currentPlayer.name, simulatedDate: dateValue || null }),
+      })
+      if (res.ok) {
+        setSimulatedDate(dateValue || '')
+        notify(dateValue ? `Simulated date set to ${dateValue}` : 'Simulated date cleared')
+      } else {
+        notify('Failed to update simulated date', 'red')
+      }
+    } catch { notify('Failed', 'red') } finally {
+      setSimDateSaving(false)
     }
   }
 
@@ -1518,6 +1541,39 @@ export default function VeoGeoApp() {
 
                     return (
                       <div className="space-y-4">
+
+                        {/* ── Date Simulator ── */}
+                        <div className={`rounded-lg p-3 border ${simulatedDate ? 'border-yellow-500/40 bg-yellow-500/5' : 'border-veo-border'}`}>
+                          <label className="block font-mono text-[9px] text-veo-dim uppercase tracking-wider mb-2">
+                            Date Simulator
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="date"
+                              value={simulatedDate}
+                              onChange={e => setSimulatedDate(e.target.value)}
+                              className="veo-input px-2 py-1.5 rounded-lg text-xs font-mono flex-1"
+                            />
+                            <button
+                              onClick={() => saveSimulatedDate(simulatedDate)}
+                              disabled={simDateSaving || !simulatedDate}
+                              className="px-3 py-1.5 rounded-lg border border-veo-green/60 text-veo-green font-mono text-[10px] font-bold hover:bg-veo-green/10 transition-all disabled:opacity-40"
+                            >
+                              Set
+                            </button>
+                            <button
+                              onClick={() => saveSimulatedDate(null)}
+                              disabled={simDateSaving || !simulatedDate}
+                              className="px-3 py-1.5 rounded-lg border border-veo-border text-veo-dim font-mono text-[10px] hover:border-veo-red/40 hover:text-veo-red transition-all disabled:opacity-40"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                          {simulatedDate && (
+                            <p className="font-mono text-[9px] text-yellow-400 mt-1.5">⚠ App is using simulated date: {simulatedDate}</p>
+                          )}
+                        </div>
+
                         <div>
                           <label className="block font-mono text-[9px] text-veo-dim uppercase tracking-wider mb-1">
                             Top N scores count toward ranking

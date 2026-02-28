@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getTodayRange, getMonthRange, calcMonthlyAverage, getTodayISODate } from '@/lib/utils'
+import { calcMonthlyAverage } from '@/lib/utils'
+import { getEffectiveDateISO, isoToDateRange, isoToMonthRange } from '@/lib/date-utils'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
@@ -12,7 +13,7 @@ export async function GET(req: NextRequest) {
   let where: Record<string, unknown> = {}
 
   if (monthMode) {
-    const { start, end } = getMonthRange()
+    const { start, end } = isoToMonthRange(await getEffectiveDateISO())
     where.date = { gte: start, lte: end }
   } else if (dateStr) {
     const d = new Date(dateStr)
@@ -20,7 +21,7 @@ export async function GET(req: NextRequest) {
     const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
     where.date = { gte: start, lte: end }
   } else {
-    const { start, end } = getTodayRange()
+    const { start, end } = isoToDateRange(await getEffectiveDateISO())
     where.date = { gte: start, lte: end }
   }
 
@@ -43,8 +44,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(scores)
 }
 
-async function calcLeaderboardRanks(scoreCount = 15): Promise<Map<number, number>> {
-  const { start, end } = getMonthRange()
+async function calcLeaderboardRanks(scoreCount = 15, todayISO: string): Promise<Map<number, number>> {
+  const { start, end } = isoToMonthRange(todayISO)
   const players = await prisma.player.findMany({
     include: {
       scores: {
@@ -74,13 +75,13 @@ export async function POST(req: NextRequest) {
   const r3 = Math.min(Math.max(parseInt(round3) || 0, 0), 5000)
   const total = r1 + r2 + r3
 
-  const today = new Date()
-  const dateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0, 0)
-  const todayISO = getTodayISODate()
+  const todayISO = await getEffectiveDateISO()
+  const [y, m, d] = todayISO.split('-').map(Number)
+  const dateOnly = new Date(y, m - 1, d, 12, 0, 0, 0)
 
   // Load league config for current month
   const config = await prisma.leagueConfig.findUnique({
-    where: { year_month: { year: today.getFullYear(), month: today.getMonth() } },
+    where: { year_month: { year: y, month: m - 1 } },
   })
 
   const activeDays: string[] = config ? JSON.parse(config.activeDays) : []
@@ -95,7 +96,7 @@ export async function POST(req: NextRequest) {
   const isDoubleDay = config?.doubleDayDate === todayISO
 
   try {
-    const ranksBefore = await calcLeaderboardRanks(scoreCount)
+    const ranksBefore = await calcLeaderboardRanks(scoreCount, todayISO)
     const rankBefore = ranksBefore.get(parseInt(playerId)) ?? null
 
     const score = await prisma.score.upsert({
@@ -105,7 +106,7 @@ export async function POST(req: NextRequest) {
       include: { player: true },
     })
 
-    const ranksAfter = await calcLeaderboardRanks(scoreCount)
+    const ranksAfter = await calcLeaderboardRanks(scoreCount, todayISO)
     const rankAfter = ranksAfter.get(parseInt(playerId)) ?? null
 
     let positionChange: number | null = null

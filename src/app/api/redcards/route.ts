@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getTodayRange } from '@/lib/utils'
+import { getEffectiveDateISO, isoToDateRange } from '@/lib/date-utils'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Cannot red card yourself' }, { status: 400 })
   }
 
-  const { start, end } = getTodayRange()
+  const { start, end } = isoToDateRange(await getEffectiveDateISO())
 
   // Check if this player already gave a red card today
   const existing = await prisma.redCard.findFirst({
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
   const givenById = searchParams.get('givenById')
   if (!givenById) return NextResponse.json({ error: 'Missing givenById' }, { status: 400 })
 
-  const { start, end } = getTodayRange()
+  const { start, end } = isoToDateRange(await getEffectiveDateISO())
   const existing = await prisma.redCard.findFirst({
     where: { givenById: parseInt(givenById), date: { gte: start, lte: end } },
     include: { receivedBy: true, score: true },

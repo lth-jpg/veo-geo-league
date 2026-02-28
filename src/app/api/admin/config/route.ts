@@ -17,7 +17,10 @@ export async function GET(req: NextRequest) {
   const year = now.getFullYear()
   const month = now.getMonth()
 
-  const config = await prisma.leagueConfig.findUnique({ where: { year_month: { year, month } } })
+  const [config, settings] = await Promise.all([
+    prisma.leagueConfig.findUnique({ where: { year_month: { year, month } } }),
+    prisma.appSettings.findUnique({ where: { id: 1 } }),
+  ])
 
   return NextResponse.json({
     year,
@@ -25,41 +28,57 @@ export async function GET(req: NextRequest) {
     activeDays: config ? JSON.parse(config.activeDays) : [],
     scoreCount: config?.scoreCount ?? 15,
     doubleDayDate: config?.doubleDayDate ?? null,
+    simulatedDate: settings?.simulatedDate ?? null,
   })
 }
 
 export async function PUT(req: NextRequest) {
   const body = await req.json()
-  const { adminName, activeDays, scoreCount } = body as {
+  const { adminName, activeDays, scoreCount, simulatedDate } = body as {
     adminName: string
-    activeDays: string[]
-    scoreCount: number
+    activeDays?: string[]
+    scoreCount?: number
+    simulatedDate?: string | null
   }
 
   if (!checkAdmin(adminName)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = now.getMonth()
+  // Handle simulated date separately
+  if (simulatedDate !== undefined) {
+    await prisma.appSettings.upsert({
+      where: { id: 1 },
+      create: { id: 1, simulatedDate: simulatedDate || null },
+      update: { simulatedDate: simulatedDate || null },
+    })
+  }
 
-  const config = await prisma.leagueConfig.upsert({
-    where: { year_month: { year, month } },
-    create: {
-      year,
-      month,
-      activeDays: JSON.stringify(activeDays),
-      scoreCount: scoreCount ?? 15,
-    },
-    update: {
-      activeDays: JSON.stringify(activeDays),
-      scoreCount: scoreCount ?? 15,
-    },
-  })
+  // Handle active days + score count when provided
+  if (activeDays !== undefined && scoreCount !== undefined) {
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = now.getMonth()
 
-  return NextResponse.json({
-    activeDays: JSON.parse(config.activeDays),
-    scoreCount: config.scoreCount,
-  })
+    const config = await prisma.leagueConfig.upsert({
+      where: { year_month: { year, month } },
+      create: {
+        year,
+        month,
+        activeDays: JSON.stringify(activeDays),
+        scoreCount: scoreCount ?? 15,
+      },
+      update: {
+        activeDays: JSON.stringify(activeDays),
+        scoreCount: scoreCount ?? 15,
+      },
+    })
+
+    return NextResponse.json({
+      activeDays: JSON.parse(config.activeDays),
+      scoreCount: config.scoreCount,
+    })
+  }
+
+  return NextResponse.json({ ok: true })
 }
