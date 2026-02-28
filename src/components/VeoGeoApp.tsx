@@ -1502,21 +1502,24 @@ export default function VeoGeoApp() {
 
                   {/* ── Config section ── */}
                   {adminSection === 'config' && (() => {
-                    const now = new Date()
-                    const year = now.getFullYear()
-                    const month = now.getMonth()
+                    // Use simulated date for the calendar when set, otherwise real today
+                    const effectiveNow = simulatedDate ? new Date(simulatedDate + 'T12:00:00') : new Date()
+                    const year = effectiveNow.getFullYear()
+                    const month = effectiveNow.getMonth()
                     const daysInMonth = new Date(year, month + 1, 0).getDate()
                     const firstDayOfWeek = new Date(year, month, 1).getDay() // 0=Sun
                     // Shift so week starts Monday: Mon=0, Tue=1 ... Sun=6
                     const startOffset = (firstDayOfWeek + 6) % 7
-                    const monthLabel = now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+                    const monthLabel = effectiveNow.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 
-                    const todayStr = (() => {
+                    const realTodayStr = (() => {
+                      const now = new Date()
                       const y = now.getFullYear()
                       const m = String(now.getMonth() + 1).padStart(2, '0')
                       const d = String(now.getDate()).padStart(2, '0')
                       return `${y}-${m}-${d}`
                     })()
+                    const todayStr = simulatedDate || realTodayStr
 
                     const toggleDay = (isoDate: string) => {
                       setAdminConfig(prev => {
