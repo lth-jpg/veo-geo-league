@@ -19,10 +19,13 @@ export async function GET(req: NextRequest) {
     const year = now.getFullYear()
     const month = now.getMonth()
 
-    const [config, settings] = await Promise.all([
-      prisma.leagueConfig.findUnique({ where: { year_month: { year, month } } }),
-      prisma.appSettings.findUnique({ where: { id: 1 } }),
-    ])
+    const config = await prisma.leagueConfig.findUnique({ where: { year_month: { year, month } } })
+
+    let simulatedDate: string | null = null
+    try {
+      const settings = await prisma.appSettings.findUnique({ where: { id: 1 } })
+      simulatedDate = settings?.simulatedDate ?? null
+    } catch { /* table may not exist yet */ }
 
     return NextResponse.json({
       year,
@@ -30,7 +33,7 @@ export async function GET(req: NextRequest) {
       activeDays: config ? JSON.parse(config.activeDays) : [],
       scoreCount: config?.scoreCount ?? 15,
       doubleDayDate: config?.doubleDayDate ?? null,
-      simulatedDate: settings?.simulatedDate ?? null,
+      simulatedDate,
     })
   } catch (e) {
     console.error('[admin/config GET]', e)
