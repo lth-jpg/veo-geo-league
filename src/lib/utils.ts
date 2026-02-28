@@ -14,12 +14,27 @@ export function getTodayRange() {
   return { start, end }
 }
 
-export function calcMonthlyAverage(scores: number[]): number {
+// Returns "YYYY-MM-DD" for today (server local time)
+export function getTodayISODate(): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+// Accepts scored objects; doubles effective score when isDoubleDay is true.
+// Sorts descending, takes top scoreCount, sums, divides by count of taken scores.
+export function calcMonthlyAverage(
+  scores: { total: number; isDoubleDay?: boolean }[],
+  scoreCount = 15
+): number {
   if (scores.length === 0) return 0
-  const sorted = [...scores].sort((a, b) => b - a)
-  const top15 = sorted.slice(0, 15)
-  const sum = top15.reduce((a, b) => a + b, 0)
-  return sum / top15.length
+  const effectives = scores.map(s => s.isDoubleDay ? s.total * 2 : s.total)
+  const sorted = [...effectives].sort((a, b) => b - a)
+  const topN = sorted.slice(0, scoreCount)
+  const sum = topN.reduce((a, b) => a + b, 0)
+  return sum / topN.length
 }
 
 export function formatScore(score: number): string {

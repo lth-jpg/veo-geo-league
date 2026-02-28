@@ -20,12 +20,19 @@ type Standing = {
 type RedCardEntry = { id: number; givenBy: Player; reason?: string | null }
 type Score = {
   id: number; playerId: number; round1: number; round2: number; round3: number
-  total: number; date: string
+  total: number; date: string; isDoubleDay: boolean
   positionChange?: number | null
   player: Player
   redCards: RedCardEntry[]
   comments: Comment[]
   _count: { redCards: number }
+}
+type LeagueConfig = {
+  isDoubleDay: boolean
+  activeDays: string[]
+  scoreCount: number
+  daysRemaining: number | null
+  totalActiveDays: number
 }
 type Comment = { id: number; scoreId: number; authorName: string; text: string; createdAt: string }
 type ChatMessage = { id: number; authorName: string; text: string; createdAt: string; player?: Player }
@@ -143,7 +150,7 @@ function ScoreTag({ total }: { total: number }) {
 }
 
 export default function VeoGeoApp() {
-  const [activeTab, setActiveTab] = useState<'leaderboard' | 'submit' | 'chat' | 'archive'>('leaderboard')
+  const [activeTab, setActiveTab] = useState<'leaderboard' | 'submit' | 'chat' | 'archive' | 'history'>('leaderboard')
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null)
   const [players, setPlayers] = useState<Player[]>([])
   const [standings, setStandings] = useState<Standing[]>([])
@@ -175,12 +182,24 @@ export default function VeoGeoApp() {
   const [pinInput, setPinInput] = useState('')
   const [pinError, setPinError] = useState(false)
 
+  // ── League config (public) ────────────────────────────────────────────────
+  const [leagueConfig, setLeagueConfig] = useState<LeagueConfig>({ isDoubleDay: false, activeDays: [], scoreCount: 15, daysRemaining: null, totalActiveDays: 0 })
+
+  // ── History tab ───────────────────────────────────────────────────────────
+  const [historyScores, setHistoryScores] = useState<Score[]>([])
+  const [historyLoaded, setHistoryLoaded] = useState(false)
+
   // ── Admin Slack panel ─────────────────────────────────────────────────────
-  const [adminSection, setAdminSection] = useState<'players' | 'morning' | 'summary'>('players')
+  const [adminSection, setAdminSection] = useState<'players' | 'morning' | 'summary' | 'config'>('players')
   const [slackPreview, setSlackPreview] = useState<{ morning: string[] | null; summary: string[] | null }>({ morning: null, summary: null })
   const [slackLoading, setSlackLoading] = useState<{ morning: boolean; summary: boolean }>({ morning: false, summary: false })
   const [slackSending, setSlackSending] = useState<{ morning: boolean; summary: boolean }>({ morning: false, summary: false })
   const [slackNote, setSlackNote] = useState<{ morning: string; summary: string }>({ morning: '', summary: '' })
+  const [doublePointsToggle, setDoublePointsToggle] = useState(false)
+
+  // ── Admin config panel ────────────────────────────────────────────────────
+  const [adminConfig, setAdminConfig] = useState<{ activeDays: string[]; scoreCount: number }>({ activeDays: [], scoreCount: 15 })
+  const [configSaving, setConfigSaving] = useState(false)
 
   // Load dismissed news IDs from localStorage on mount
   useEffect(() => {
@@ -259,9 +278,18 @@ export default function VeoGeoApp() {
     } catch { /* ignore */ }
   }, [])
 
+  const fetchLeagueConfig = useCallback(async () => {
+    try {
+      const res = await fetch('/api/config')
+      if (!res.ok) return
+      const data = await res.json()
+      setLeagueConfig(data)
+    } catch { /* ignore */ }
+  }, [])
+
   useEffect(() => {
-    fetchPlayers(); fetchLeaderboard(); fetchTodayScores(); fetchChat(); fetchArchive(); fetchBreakingNews()
-  }, [fetchPlayers, fetchLeaderboard, fetchTodayScores, fetchChat, fetchArchive, fetchBreakingNews])
+    fetchPlayers(); fetchLeaderboard(); fetchTodayScores(); fetchChat(); fetchArchive(); fetchBreakingNews(); fetchLeagueConfig()
+  }, [fetchPlayers, fetchLeaderboard, fetchTodayScores, fetchChat, fetchArchive, fetchBreakingNews, fetchLeagueConfig])
 
   useEffect(() => {
     if (currentPlayer) fetchRedCardStatus()
@@ -273,11 +301,11 @@ export default function VeoGeoApp() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchLeaderboard(); fetchTodayScores(); fetchChat(); fetchBreakingNews()
+      fetchLeaderboard(); fetchTodayScores(); fetchChat(); fetchBreakingNews(); fetchLeagueConfig()
       if (currentPlayer) fetchRedCardStatus()
     }, 30000)
     return () => clearInterval(interval)
-  }, [fetchLeaderboard, fetchTodayScores, fetchChat, fetchBreakingNews, fetchRedCardStatus, currentPlayer])
+  }, [fetchLeaderboard, fetchTodayScores, fetchChat, fetchBreakingNews, fetchRedCardStatus, fetchLeagueConfig, currentPlayer])
 
   const dismissNews = (id: number) => {
     const arr = Array.from(dismissedNews)
@@ -316,6 +344,45 @@ export default function VeoGeoApp() {
     }
   }
 
+  const fetchHistoryScores = useCallback(async () => {
+    try {
+      const res = await fetch('/api/scores?month=true')
+      if (!res.ok) return
+      const data = await res.json()
+      if (Array.isArray(data)) { setHistoryScores(data); setHistoryLoaded(true) }
+    } catch { /* ignore */ }
+  }, [])
+
+  const fetchAdminConfig = useCallback(async () => {
+    if (!currentPlayer) return
+    try {
+      const res = await fetch(`/api/admin/config?adminName=${encodeURIComponent(currentPlayer.name)}`)
+      if (!res.ok) return
+      const data = await res.json()
+      setAdminConfig({ activeDays: data.activeDays ?? [], scoreCount: data.scoreCount ?? 15 })
+    } catch { /* ignore */ }
+  }, [currentPlayer])
+
+  const saveAdminConfig = async () => {
+    if (!currentPlayer) return
+    setConfigSaving(true)
+    try {
+      const res = await fetch('/api/admin/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminName: currentPlayer.name, activeDays: adminConfig.activeDays, scoreCount: adminConfig.scoreCount }),
+      })
+      if (res.ok) {
+        notify('League config saved!')
+        await fetchLeagueConfig()
+      } else {
+        notify('Failed to save config', 'red')
+      }
+    } catch { notify('Failed to save config', 'red') } finally {
+      setConfigSaving(false)
+    }
+  }
+
   const fetchSlackPreview = async (type: 'morning' | 'summary') => {
     if (!currentPlayer) return
     setSlackLoading(prev => ({ ...prev, [type]: true }))
@@ -340,12 +407,20 @@ export default function VeoGeoApp() {
       const res = await fetch('/api/admin/slack', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, action: 'send', adminName: currentPlayer.name, customNote: slackNote[type] || undefined }),
+        body: JSON.stringify({
+          type, action: 'send', adminName: currentPlayer.name,
+          customNote: slackNote[type] || undefined,
+          doublePoints: type === 'morning' ? doublePointsToggle : undefined,
+        }),
       })
       if (res.ok) {
         notify(`${type === 'morning' ? 'Morning briefing' : 'Daily summary'} sent to Slack!`)
         setSlackPreview(prev => ({ ...prev, [type]: null }))
         setSlackNote(prev => ({ ...prev, [type]: '' }))
+        if (type === 'morning' && doublePointsToggle) {
+          setDoublePointsToggle(false)
+          await fetchLeagueConfig() // refresh so banner shows
+        }
       } else {
         notify('Failed to send to Slack', 'red')
       }
@@ -625,6 +700,39 @@ export default function VeoGeoApp() {
         )}
       </AnimatePresence>
 
+      {/* ─── DOUBLE POINTS BANNER ─── */}
+      {leagueConfig.isDoubleDay && (
+        <div
+          className="relative overflow-hidden z-40"
+          style={{ background: '#000', borderBottom: '2px solid #FFD700' }}
+        >
+          <div style={{ height: 2, background: '#FFD700', boxShadow: '0 0 14px 4px #FFD700', opacity: 0.9 }} />
+          <div className="flex items-center h-9">
+            <div
+              className="flex-shrink-0 px-3 h-full flex items-center font-display font-900 text-sm tracking-widest"
+              style={{ background: '#FFD700', color: '#000' }}
+            >
+              ⚡ DOUBLE POINTS
+            </div>
+            <div className="flex-1 overflow-hidden relative">
+              <motion.div
+                className="flex items-center gap-16 whitespace-nowrap"
+                style={{ color: '#FFD700', fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700 }}
+                animate={{ x: ['0%', '-50%'] }}
+                transition={{ duration: 16, repeat: Infinity, ease: 'linear' }}
+              >
+                {[0, 1].map(k => (
+                  <span key={k} className="pl-8">
+                    Today&apos;s scores count TWICE toward the monthly standings — go big!
+                  </span>
+                ))}
+              </motion.div>
+            </div>
+          </div>
+          <div style={{ height: 2, background: '#FFD700', boxShadow: '0 0 14px 4px #FFD700', opacity: 0.4 }} />
+        </div>
+      )}
+
       {/* Notification toast */}
       <AnimatePresence>
         {notification && (
@@ -831,15 +939,19 @@ export default function VeoGeoApp() {
         )}
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-6 p-1 bg-veo-surface rounded-xl border border-veo-border w-fit">
+        <div className="flex flex-wrap gap-1 mb-6 p-1 bg-veo-surface rounded-xl border border-veo-border w-fit">
           {[
             { id: 'leaderboard', icon: <Trophy size={14}/>, label: 'STANDINGS' },
+            { id: 'history', icon: <Calendar size={14}/>, label: 'HISTORY' },
             { id: 'submit', icon: <Zap size={14}/>, label: 'SUBMIT' },
             { id: 'chat', icon: <MessageSquare size={14}/>, label: 'TRASH TALK' },
             { id: 'archive', icon: <Archive size={14}/>, label: 'ARCHIVE' },
           ].map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id as typeof activeTab)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-mono text-xs tracking-wider transition-all ${
+            <button key={tab.id} onClick={() => {
+              setActiveTab(tab.id as typeof activeTab)
+              if (tab.id === 'history' && !historyLoaded) fetchHistoryScores()
+            }}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg font-mono text-xs tracking-wider transition-all ${
                 activeTab === tab.id ? 'bg-veo-green text-black font-bold' : 'text-veo-dim hover:text-veo-text'
               }`}>
               {tab.icon} {tab.label}
@@ -945,6 +1057,9 @@ export default function VeoGeoApp() {
                                 <FormBadge streak={feedStreak} />
                                 <ScoreTag total={score.total} />
                                 <PositionChangeBadge change={score.positionChange} />
+                                {score.isDoubleDay && (
+                                  <span className="inline-flex items-center font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border border-yellow-400/50 text-yellow-400 bg-yellow-400/10 tracking-wider">⚡ ×2</span>
+                                )}
                               </div>
                               <div className="flex items-center gap-2">
                                 {score._count.redCards > 0 && (
@@ -1016,6 +1131,36 @@ export default function VeoGeoApp() {
                 )}
               </div>
 
+              {/* ─── SCHEDULE / DAYS REMAINING ─── */}
+              <div className="bento-card p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Calendar size={14} className="text-veo-green" />
+                  <span className="font-display text-base font-700 tracking-wide text-white uppercase">League Schedule</span>
+                </div>
+                {leagueConfig.totalActiveDays > 0 ? (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-mono text-[10px] text-veo-dim">{leagueConfig.totalActiveDays} scoring days this month</span>
+                      <span className="font-mono text-[10px] text-veo-green font-bold">{leagueConfig.daysRemaining ?? 0} remaining</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-veo-muted overflow-hidden mb-2">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${Math.min(((leagueConfig.totalActiveDays - (leagueConfig.daysRemaining ?? 0)) / leagueConfig.totalActiveDays) * 100, 100)}%`,
+                          background: 'linear-gradient(90deg,#30FF51,#00cc33)',
+                        }}
+                      />
+                    </div>
+                    <div className="font-mono text-[9px] text-veo-dim">
+                      {leagueConfig.totalActiveDays - (leagueConfig.daysRemaining ?? 0)} played · Top {leagueConfig.scoreCount} scores count
+                    </div>
+                  </div>
+                ) : (
+                  <p className="font-mono text-[10px] text-veo-dim">Schedule not set — ask Leo to configure it</p>
+                )}
+              </div>
+
               <div className="bento-card p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <Users size={14} className="text-veo-green" />
@@ -1054,18 +1199,22 @@ export default function VeoGeoApp() {
                   </div>
 
                   {/* Section tabs */}
-                  <div className="flex gap-1.5 mb-4">
-                    {(['players', 'morning', 'summary'] as const).map(sec => (
+                  <div className="flex gap-1 mb-4 flex-wrap">
+                    {(['players', 'morning', 'summary', 'config'] as const).map(sec => (
                       <button
                         key={sec}
-                        onClick={() => setAdminSection(sec)}
+                        onClick={() => {
+                          setAdminSection(sec)
+                          if (sec === 'config') fetchAdminConfig()
+                        }}
                         className={`flex-1 py-1.5 rounded-lg border font-mono text-[9px] uppercase tracking-wider transition-all ${
                           adminSection === sec
                             ? 'border-veo-red/60 bg-veo-red/10 text-veo-red'
                             : 'border-veo-border text-veo-dim hover:border-veo-muted'
                         }`}
                       >
-                        {sec === 'players' ? '👥 Players' : sec === 'morning' ? '🌅 Morning' : '📊 Summary'}
+                        {sec === 'players' ? '👥' : sec === 'morning' ? '🌅' : sec === 'summary' ? '📊' : '⚙️'}
+                        {' '}{sec === 'players' ? 'Players' : sec === 'morning' ? 'Morning' : sec === 'summary' ? 'Summary' : 'Config'}
                       </button>
                     ))}
                   </div>
@@ -1110,23 +1259,51 @@ export default function VeoGeoApp() {
                             : 'Preview and send the daily wrap-up to Slack.'}
                         </p>
 
+                        {/* Double points toggle (morning only) */}
+                        {type === 'morning' && (
+                          <button
+                            onClick={() => setDoublePointsToggle(v => !v)}
+                            className={`w-full py-2 rounded-lg border font-mono text-[10px] font-bold uppercase tracking-wider transition-all ${
+                              doublePointsToggle
+                                ? 'border-yellow-400/60 bg-yellow-400/10 text-yellow-400'
+                                : 'border-veo-border text-veo-dim hover:border-veo-muted'
+                            }`}
+                          >
+                            {doublePointsToggle ? '⚡ Double Points ON — click to disable' : '⚡ Enable Double Points Day'}
+                          </button>
+                        )}
+
                         {/* Custom note input */}
                         <div>
                           <label className="block font-mono text-[9px] text-veo-dim uppercase tracking-wider mb-1">
-                            Custom note (optional — prepended to message)
+                            Custom note (optional)
                           </label>
                           <input
                             type="text"
                             value={note}
                             onChange={e => setSlackNote(prev => ({ ...prev, [type]: e.target.value }))}
-                            placeholder="e.g. Today is a double points day!"
+                            placeholder="Add a note prepended to the message..."
                             className="veo-input w-full px-3 py-2 rounded-lg text-xs"
                           />
                         </div>
 
                         {/* Preview button */}
                         <button
-                          onClick={() => fetchSlackPreview(type)}
+                          onClick={() => {
+                            // Pass doublePoints to preview so it shows in preview
+                            if (type === 'morning') {
+                              setSlackLoading(prev => ({ ...prev, morning: true }))
+                              setSlackPreview(prev => ({ ...prev, morning: null }))
+                              fetch('/api/admin/slack', {
+                                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ type: 'morning', action: 'preview', adminName: currentPlayer!.name, customNote: note || undefined, doublePoints: doublePointsToggle }),
+                              }).then(r => r.json()).then(d => {
+                                if (d.previewLines) setSlackPreview(prev => ({ ...prev, morning: d.previewLines }))
+                              }).finally(() => setSlackLoading(prev => ({ ...prev, morning: false })))
+                            } else {
+                              fetchSlackPreview(type)
+                            }
+                          }}
                           disabled={loading}
                           className="w-full py-2 rounded-lg border border-veo-border text-veo-dim font-mono text-[10px] hover:border-veo-muted hover:text-veo-text transition-all disabled:opacity-50"
                         >
@@ -1145,6 +1322,7 @@ export default function VeoGeoApp() {
                                 <p key={i} className={`font-mono text-[10px] leading-relaxed ${
                                   line.startsWith('─') ? 'text-veo-border' :
                                   line.startsWith('⛳') ? 'text-veo-green font-bold text-xs' :
+                                  line.startsWith('⚡') ? 'text-yellow-400 font-bold' :
                                   line.startsWith('📌') ? 'text-yellow-400' :
                                   line.startsWith('  ') ? 'text-veo-text' :
                                   line === '' ? 'h-1' :
@@ -1172,6 +1350,123 @@ export default function VeoGeoApp() {
                       </div>
                     )
                   })()}
+
+                  {/* ── Config section ── */}
+                  {adminSection === 'config' && (() => {
+                    const now = new Date()
+                    const year = now.getFullYear()
+                    const month = now.getMonth()
+                    const daysInMonth = new Date(year, month + 1, 0).getDate()
+                    const firstDayOfWeek = new Date(year, month, 1).getDay() // 0=Sun
+                    // Shift so week starts Monday: Mon=0, Tue=1 ... Sun=6
+                    const startOffset = (firstDayOfWeek + 6) % 7
+                    const monthLabel = now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+
+                    const todayStr = (() => {
+                      const y = now.getFullYear()
+                      const m = String(now.getMonth() + 1).padStart(2, '0')
+                      const d = String(now.getDate()).padStart(2, '0')
+                      return `${y}-${m}-${d}`
+                    })()
+
+                    const toggleDay = (isoDate: string) => {
+                      setAdminConfig(prev => {
+                        const days = prev.activeDays.includes(isoDate)
+                          ? prev.activeDays.filter(d => d !== isoDate)
+                          : [...prev.activeDays, isoDate].sort()
+                        return { ...prev, activeDays: days }
+                      })
+                    }
+
+                    const selectWeekdays = () => {
+                      const weekdays: string[] = []
+                      for (let d = 1; d <= daysInMonth; d++) {
+                        const date = new Date(year, month, d)
+                        if (date.getDay() !== 0 && date.getDay() !== 6) {
+                          const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+                          weekdays.push(iso)
+                        }
+                      }
+                      setAdminConfig(prev => ({ ...prev, activeDays: weekdays }))
+                    }
+
+                    return (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block font-mono text-[9px] text-veo-dim uppercase tracking-wider mb-1">
+                            Top N scores count toward ranking
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number" min={1} max={31}
+                              value={adminConfig.scoreCount}
+                              onChange={e => setAdminConfig(prev => ({ ...prev, scoreCount: Math.max(1, parseInt(e.target.value) || 1) }))}
+                              className="veo-input w-20 px-3 py-2 rounded-lg text-sm text-center font-display font-700"
+                            />
+                            <span className="font-mono text-[10px] text-veo-dim">best scores per month</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-mono text-[9px] text-veo-dim uppercase tracking-wider">{monthLabel} active days</span>
+                            <div className="flex gap-1">
+                              <button onClick={selectWeekdays} className="px-2 py-1 rounded border border-veo-border text-veo-dim font-mono text-[9px] hover:border-veo-muted transition-colors">
+                                Weekdays
+                              </button>
+                              <button onClick={() => setAdminConfig(prev => ({ ...prev, activeDays: [] }))} className="px-2 py-1 rounded border border-veo-border text-veo-dim font-mono text-[9px] hover:border-veo-red/40 hover:text-veo-red transition-colors">
+                                Clear
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Calendar grid */}
+                          <div className="grid grid-cols-7 gap-0.5 text-center mb-1">
+                            {['M','T','W','T','F','S','S'].map((d, i) => (
+                              <div key={i} className="font-mono text-[9px] text-veo-dim py-1">{d}</div>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-7 gap-0.5">
+                            {Array.from({ length: startOffset }).map((_, i) => (
+                              <div key={`pad-${i}`} />
+                            ))}
+                            {Array.from({ length: daysInMonth }).map((_, i) => {
+                              const day = i + 1
+                              const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                              const isActive = adminConfig.activeDays.includes(iso)
+                              const isToday = iso === todayStr
+                              const dayOfWeek = new Date(year, month, day).getDay()
+                              const isFriday = dayOfWeek === 5
+                              return (
+                                <button
+                                  key={day}
+                                  onClick={() => toggleDay(iso)}
+                                  className={`h-7 rounded text-[10px] font-mono font-bold transition-all ${
+                                    isActive
+                                      ? 'bg-veo-green text-black'
+                                      : isToday
+                                      ? 'border border-veo-green/40 text-veo-green'
+                                      : 'border border-veo-border text-veo-dim hover:border-veo-muted'
+                                  }`}
+                                >
+                                  {day}{isFriday ? '⚡' : ''}
+                                </button>
+                              )
+                            })}
+                          </div>
+                          <p className="font-mono text-[9px] text-veo-dim mt-1">{adminConfig.activeDays.length} days selected · ⚡ = Friday</p>
+                        </div>
+
+                        <button
+                          onClick={saveAdminConfig}
+                          disabled={configSaving}
+                          className="w-full py-2.5 rounded-lg border border-veo-red/60 text-veo-red font-mono text-[11px] font-bold uppercase tracking-wider hover:bg-veo-red/10 transition-all disabled:opacity-50"
+                        >
+                          {configSaving ? 'Saving...' : '💾 Save League Config'}
+                        </button>
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
             </div>
@@ -1193,11 +1488,17 @@ export default function VeoGeoApp() {
                 </div>
               ) : (
                 <>
-                  <div className="flex items-center gap-2 p-3 bg-black rounded-xl border border-veo-green/30 mb-6">
+                  <div className="flex items-center gap-2 p-3 bg-black rounded-xl border border-veo-green/30 mb-4">
                     <span className="text-2xl">{currentPlayer.countryFlag}</span>
                     <span className="font-display text-lg font-700 text-veo-green">{currentPlayer.name}</span>
                     <Star size={12} className="text-veo-green ml-auto"/>
                   </div>
+                  {leagueConfig.isDoubleDay && (
+                    <div className="mb-4 p-3 rounded-xl border border-yellow-400/40 bg-yellow-400/5 text-center">
+                      <div className="font-display text-lg font-900 text-yellow-400 tracking-wider">⚡ DOUBLE POINTS DAY</div>
+                      <div className="font-mono text-[10px] text-yellow-400/70 mt-0.5">Today&apos;s score counts TWICE in the standings</div>
+                    </div>
+                  )}
                   <div className="space-y-4 mb-6">
                     {[{label:'Round 1',val:r1,set:setR1},{label:'Round 2',val:r2,set:setR2},{label:'Round 3',val:r3,set:setR3}].map(({label,val,set})=>(
                       <div key={label}>
@@ -1285,6 +1586,71 @@ export default function VeoGeoApp() {
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ─── HISTORY ─── */}
+        {activeTab === 'history' && (
+          <div className="max-w-2xl mx-auto">
+            <div className="flex items-center gap-2 mb-4">
+              <Calendar size={16} className="text-veo-green" />
+              <span className="font-display text-xl font-700 tracking-wide text-white uppercase">Score History</span>
+              <span className="ml-auto font-mono text-[10px] text-veo-dim">This month</span>
+              <button onClick={fetchHistoryScores} className="p-1.5 rounded-lg border border-veo-border text-veo-dim hover:text-veo-green transition-colors">
+                <RefreshCw size={12} />
+              </button>
+            </div>
+            {(() => {
+              if (!historyLoaded) return (
+                <div className="bento-card p-8 text-center font-mono text-xs text-veo-dim">Loading history...</div>
+              )
+              if (historyScores.length === 0) return (
+                <div className="bento-card p-8 text-center font-mono text-xs text-veo-dim">No scores yet this month</div>
+              )
+              // Group by date
+              const groups = new Map<string, Score[]>()
+              for (const s of historyScores) {
+                const dateKey = new Date(s.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+                if (!groups.has(dateKey)) groups.set(dateKey, [])
+                groups.get(dateKey)!.push(s)
+              }
+              return (
+                <div className="space-y-4">
+                  {Array.from(groups.entries()).map(([dateLabel, scores]) => (
+                    <div key={dateLabel} className="bento-card p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="font-display text-sm font-700 text-veo-green tracking-wide">{dateLabel}</span>
+                        {scores[0]?.isDoubleDay && (
+                          <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border border-yellow-400/50 text-yellow-400 bg-yellow-400/10">⚡ ×2</span>
+                        )}
+                        <span className="ml-auto font-mono text-[10px] text-veo-dim">{scores.length} submitted</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {scores.map((score, i) => (
+                          <div key={score.id} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-veo-border bg-black">
+                            <span className="font-mono text-sm w-6 text-center text-veo-dim">{['🥇','🥈','🥉'][i] ?? `${i+1}.`}</span>
+                            <span className="text-lg">{score.player.countryFlag}</span>
+                            <span className="font-mono text-xs text-veo-text flex-1 truncate">{score.player.name}</span>
+                            <div className="flex items-center gap-1.5">
+                              {score.isDoubleDay && <span className="font-mono text-[9px] text-yellow-400">⚡</span>}
+                              {score._count.redCards > 0 && <span className="font-mono text-[9px] text-veo-red">🟥×{score._count.redCards}</span>}
+                              <span className="font-display text-base font-700 text-white">{score.total.toLocaleString()}</span>
+                            </div>
+                            <div className="hidden sm:flex gap-1 text-veo-dim font-mono text-[9px]">
+                              <span>{score.round1.toLocaleString()}</span>
+                              <span>·</span>
+                              <span>{score.round2.toLocaleString()}</span>
+                              <span>·</span>
+                              <span>{score.round3.toLocaleString()}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
           </div>
         )}
 
