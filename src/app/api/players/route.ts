@@ -56,7 +56,7 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
-    // Delete in dependency order: comments → red cards → scores → chat messages → player
+    // Delete in dependency order: comments → red cards → scores → chat messages → breaking news → player
     const scores = await prisma.score.findMany({ where: { playerId: id }, select: { id: true } })
     const scoreIds = scores.map((s: { id: number }) => s.id)
 
@@ -66,10 +66,12 @@ export async function DELETE(req: NextRequest) {
     })
     await prisma.score.deleteMany({ where: { playerId: id } })
     await prisma.chatMessage.deleteMany({ where: { playerId: id } })
+    await prisma.breakingNews.deleteMany({ where: { playerId: id } })
     await prisma.player.delete({ where: { id } })
 
     return NextResponse.json({ success: true })
-  } catch {
-    return NextResponse.json({ error: 'Player not found' }, { status: 404 })
+  } catch (err) {
+    console.error('DELETE /api/players error:', err)
+    return NextResponse.json({ error: 'Failed to delete player' }, { status: 500 })
   }
 }
