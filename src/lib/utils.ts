@@ -19,7 +19,7 @@ export function calcMonthlyAverage(scores: number[]): number {
   const sorted = [...scores].sort((a, b) => b - a)
   const top15 = sorted.slice(0, 15)
   const sum = top15.reduce((a, b) => a + b, 0)
-  return sum / 15
+  return sum / top15.length
 }
 
 export function formatScore(score: number): string {
