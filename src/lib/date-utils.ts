@@ -5,8 +5,12 @@ import { prisma } from './prisma'
  * Uses simulatedDate from AppSettings when set; falls back to real date.
  */
 export async function getEffectiveDateISO(): Promise<string> {
-  const settings = await prisma.appSettings.findUnique({ where: { id: 1 } })
-  if (settings?.simulatedDate) return settings.simulatedDate
+  try {
+    const settings = await prisma.appSettings.findUnique({ where: { id: 1 } })
+    if (settings?.simulatedDate) return settings.simulatedDate
+  } catch {
+    // AppSettings table may not exist yet on fresh deploy — fall through to real date
+  }
   const now = new Date()
   const y = now.getFullYear()
   const m = String(now.getMonth() + 1).padStart(2, '0')
