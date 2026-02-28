@@ -34,7 +34,7 @@ export function calcMonthlyAverage(
   const sorted = [...effectives].sort((a, b) => b - a)
   const topN = sorted.slice(0, scoreCount)
   const sum = topN.reduce((a, b) => a + b, 0)
-  return sum / topN.length
+  return sum / scoreCount
 }
 
 export function formatScore(score: number): string {
