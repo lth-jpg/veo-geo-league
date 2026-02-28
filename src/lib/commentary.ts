@@ -167,14 +167,14 @@ const MORNING_OPENERS = [
   'Another opportunity to either shine or quietly disappear.',
   'Submission window closes at 14:00. Start mentally preparing.',
   "It's a new day in the league. Someone's getting carded. Not saying who.",
-  'Philip has already checked three bins this morning and is mentally prepared. Are you?',
-  "Reminder: Karolina knows exactly which countries you're not supposed to be doing business with. She's watching.",
-  "Leo is loading up his best score from last week and hoping nobody notices. We notice, Leo.",
-  "Ollie has been practising since 6am. Ollie has also been telling everyone about it since 6am.",
-  "Philip found something suspicious in the kitchen bin and has filed a full incident report. Meanwhile, scores open at 14:00.",
-  "Karolina could tell you where that export is going. She won't. But she could.",
-  "If Leo's score seems unusually good today, just know that the rest of us have questions.",
-  "Ollie has optimised his setup, reviewed the leaderboard, and already written a post-game analysis. It's 9am.",
+  'The world has 195 countries. Today you will confidently misidentify at least three of them.',
+  "Pro tip: the sun angle doesn't help if you're not even on the right continent.",
+  "Someone in this league genuinely thought that was Bolivia. They know who they are.",
+  'Your GeoGuessr knowledge is about to be tested. Your ego is about to be humbled.',
+  "A new day. Somewhere in the world there's a blurry road you're about to place in the wrong hemisphere.",
+  "Flag recognition. Language skills. Basic geography. How many of these do you actually have?",
+  "Today's score window opens at 14:00. The excuses window is already open.",
+  "If you placed Russia in South America yesterday, today is your chance at redemption.",
 ]
 
 export function morningOpener(): string {

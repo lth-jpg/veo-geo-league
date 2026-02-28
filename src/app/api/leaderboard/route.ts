@@ -11,7 +11,14 @@ export async function GET(req: NextRequest) {
 
   const { start, end } = getMonthRange(year, month)
 
-  // Get all players with their scores for the month, plus last 3 scores overall for form
+  // Load scoreCount from config for current month (or archive month)
+  const configYear = year ?? start.getFullYear()
+  const configMonth = month ?? start.getMonth()
+  const config = await prisma.leagueConfig.findUnique({
+    where: { year_month: { year: configYear, month: configMonth } },
+  })
+  const scoreCount = config?.scoreCount ?? 15
+
   const players = await prisma.player.findMany({
     include: {
       scores: {
@@ -24,7 +31,6 @@ export async function GET(req: NextRequest) {
     },
   })
 
-  // Fetch last 3 scores for each player (for form engine) - ordered by date desc
   const last3ScoresPerPlayer = await prisma.score.findMany({
     where: {
       playerId: { in: players.map(p => p.id) },
@@ -33,7 +39,6 @@ export async function GET(req: NextRequest) {
     orderBy: { date: 'desc' },
   })
 
-  // Build map of playerId -> last 3 totals
   const last3Map = new Map<number, number[]>()
   for (const s of last3ScoresPerPlayer) {
     const arr = last3Map.get(s.playerId) || []
@@ -41,7 +46,6 @@ export async function GET(req: NextRequest) {
     last3Map.set(s.playerId, arr)
   }
 
-  // Find MVP (highest single daily total this month)
   let mvpPlayerId: number | null = null
   let mvpScore = -1
   for (const p of players) {
@@ -55,12 +59,12 @@ export async function GET(req: NextRequest) {
 
   const standings = players
     .map((p) => {
-      const totals = p.scores.map((s) => s.total)
-      const avg = calcMonthlyAverage(totals)
-      const top15Sum = [...totals].sort((a, b) => b - a).slice(0, 15).reduce((a, b) => a + b, 0)
-      const bestScore = totals.length > 0 ? Math.max(...totals) : 0
+      const scores = p.scores.map(s => ({ total: s.total, isDoubleDay: s.isDoubleDay }))
+      const avg = calcMonthlyAverage(scores, scoreCount)
+      const effectives = scores.map(s => s.isDoubleDay ? s.total * 2 : s.total)
+      const topNSum = [...effectives].sort((a, b) => b - a).slice(0, scoreCount).reduce((a, b) => a + b, 0)
+      const bestScore = scores.length > 0 ? Math.max(...scores.map(s => s.total)) : 0
 
-      // Form engine: last 3 games
       const last3 = last3Map.get(p.id) || []
       let formStreak: 'hot' | 'cold' | null = null
       if (last3.length >= 3) {
@@ -73,15 +77,16 @@ export async function GET(req: NextRequest) {
         name: p.name,
         countryFlag: p.countryFlag,
         monthlyAverage: avg,
-        top15Sum,
-        gamesPlayed: totals.length,
+        topNSum,
+        gamesPlayed: scores.length,
         bestScore,
         redCardCount: p.redCardsReceived.length,
         isMvp: p.id === mvpPlayerId && mvpScore > 0,
         formStreak,
+        scoreCount,
       }
     })
     .sort((a, b) => b.monthlyAverage - a.monthlyAverage)
 
-  return NextResponse.json({ standings, month: start.getMonth(), year: start.getFullYear() })
+  return NextResponse.json({ standings, month: start.getMonth(), year: start.getFullYear(), scoreCount })
 }

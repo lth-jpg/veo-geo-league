@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getTodayRange, getMonthRange, calcMonthlyAverage } from '@/lib/utils'
+import { getTodayRange, getMonthRange, calcMonthlyAverage, getTodayISODate } from '@/lib/utils'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const dateStr = searchParams.get('date')
   const playerId = searchParams.get('playerId')
+  const monthMode = searchParams.get('month') === 'true'
 
   let where: Record<string, unknown> = {}
 
-  if (dateStr) {
+  if (monthMode) {
+    const { start, end } = getMonthRange()
+    where.date = { gte: start, lte: end }
+  } else if (dateStr) {
     const d = new Date(dateStr)
     const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0)
     const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
@@ -22,6 +26,10 @@ export async function GET(req: NextRequest) {
 
   if (playerId) where.playerId = parseInt(playerId)
 
+  const orderBy = monthMode
+    ? [{ date: 'desc' as const }, { total: 'desc' as const }]
+    : [{ total: 'desc' as const }]
+
   const scores = await prisma.score.findMany({
     where,
     include: {
@@ -30,25 +38,25 @@ export async function GET(req: NextRequest) {
       comments: { orderBy: { createdAt: 'asc' } },
       _count: { select: { redCards: true } },
     },
-    orderBy: { total: 'desc' },
+    orderBy,
   })
   return NextResponse.json(scores)
 }
 
-async function calcLeaderboardRanks(): Promise<Map<number, number>> {
+async function calcLeaderboardRanks(scoreCount = 15): Promise<Map<number, number>> {
   const { start, end } = getMonthRange()
   const players = await prisma.player.findMany({
     include: {
       scores: {
         where: { date: { gte: start, lte: end } },
-        select: { total: true },
+        select: { total: true, isDoubleDay: true },
       },
     },
   })
   const ranked = players
     .map(p => ({
       id: p.id,
-      avg: calcMonthlyAverage(p.scores.map(s => s.total)),
+      avg: calcMonthlyAverage(p.scores, scoreCount),
     }))
     .sort((a, b) => b.avg - a.avg)
 
@@ -68,40 +76,49 @@ export async function POST(req: NextRequest) {
 
   const today = new Date()
   const dateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0, 0)
+  const todayISO = getTodayISODate()
+
+  // Load league config for current month
+  const config = await prisma.leagueConfig.findUnique({
+    where: { year_month: { year: today.getFullYear(), month: today.getMonth() } },
+  })
+
+  const activeDays: string[] = config ? JSON.parse(config.activeDays) : []
+  const scoreCount = config?.scoreCount ?? 15
+
+  // Enforce active days: block submission if not in the configured active days
+  if (activeDays.length > 0 && !activeDays.includes(todayISO)) {
+    return NextResponse.json({ error: 'Scores are not open today' }, { status: 400 })
+  }
+
+  // Check if today is a double-points day
+  const isDoubleDay = config?.doubleDayDate === todayISO
 
   try {
-    // Capture rank before submission
-    const ranksBefore = await calcLeaderboardRanks()
+    const ranksBefore = await calcLeaderboardRanks(scoreCount)
     const rankBefore = ranksBefore.get(parseInt(playerId)) ?? null
 
     const score = await prisma.score.upsert({
       where: { playerId_date: { playerId: parseInt(playerId), date: dateOnly } },
-      create: { playerId: parseInt(playerId), round1: r1, round2: r2, round3: r3, total, date: dateOnly },
-      update: { round1: r1, round2: r2, round3: r3, total },
+      create: { playerId: parseInt(playerId), round1: r1, round2: r2, round3: r3, total, date: dateOnly, isDoubleDay },
+      update: { round1: r1, round2: r2, round3: r3, total, isDoubleDay },
       include: { player: true },
     })
 
-    // Capture rank after submission
-    const ranksAfter = await calcLeaderboardRanks()
+    const ranksAfter = await calcLeaderboardRanks(scoreCount)
     const rankAfter = ranksAfter.get(parseInt(playerId)) ?? null
 
-    // Calculate position change (positive = moved up in rankings = lower rank number)
     let positionChange: number | null = null
     if (rankBefore !== null && rankAfter !== null) {
-      positionChange = rankBefore - rankAfter // positive = moved up (rank went from 3→1 = +2)
+      positionChange = rankBefore - rankAfter
     }
 
-    // Store position change on score
     if (positionChange !== null) {
-      await prisma.score.update({
-        where: { id: score.id },
-        data: { positionChange },
-      })
+      await prisma.score.update({ where: { id: score.id }, data: { positionChange } })
     }
 
-    // Breaking news: check for shame trigger (sub-6000)
     if (total < 6000) {
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
       await prisma.breakingNews.create({
         data: {
           type: 'shame',
@@ -112,9 +129,8 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Breaking news: check for lead takeover trigger (moved to 1st place)
     if (rankAfter === 1 && (rankBefore === null || rankBefore > 1)) {
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
       await prisma.breakingNews.create({
         data: {
           type: 'takeover',

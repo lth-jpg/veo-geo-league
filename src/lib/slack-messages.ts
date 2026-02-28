@@ -22,17 +22,25 @@ function getLastSunday(year: number, month: number): number {
   return d.getUTCDate()
 }
 
-export async function buildMorningMessage(customNote?: string) {
+export async function buildMorningMessage(customNote?: string, isDoubleDay?: boolean) {
   const { start, end } = getMonthRange()
+
+  // Load scoreCount from config
+  const now = new Date()
+  const config = await prisma.leagueConfig.findUnique({
+    where: { year_month: { year: now.getFullYear(), month: now.getMonth() } },
+  }).catch(() => null)
+  const scoreCount = config?.scoreCount ?? 15
+
   const players = await prisma.player.findMany({
-    include: { scores: { where: { date: { gte: start, lte: end } }, select: { total: true } } },
+    include: { scores: { where: { date: { gte: start, lte: end } }, select: { total: true, isDoubleDay: true } } },
   })
 
   const standings = players
     .map(p => ({
       name: p.name,
       flag: p.countryFlag,
-      avg: calcMonthlyAverage(p.scores.map(s => s.total)),
+      avg: calcMonthlyAverage(p.scores, scoreCount),
       games: p.scores.length,
     }))
     .filter(p => p.games > 0)
@@ -63,6 +71,7 @@ export async function buildMorningMessage(customNote?: string) {
   const blocks = [
     veoHeader('⛳ VEO GEO LEAGUE — Morning Briefing'),
     ...(customNote ? [veoSection(`📌 ${customNote}`)] : []),
+    ...(isDoubleDay ? [veoSection('⚡ *DOUBLE POINTS DAY* ⚡\nToday\'s scores count TWICE toward the monthly standings. Don\'t waste it.')] : []),
     veoSection(opener),
     veoDivider(),
     veoSection(`*Scores close at 14:00* — ${countdownText}`),
@@ -71,11 +80,14 @@ export async function buildMorningMessage(customNote?: string) {
     veoContext(appUrl ? `Submit at ${appUrl}` : 'Submit your score at 14:00'),
   ]
 
-  const fallbackText = `⛳ VEO GEO LEAGUE — Scores close at 14:00. ${countdownText}.`
+  const fallbackText = isDoubleDay
+    ? `⚡ DOUBLE POINTS DAY ⚡ — VEO GEO LEAGUE Scores close at 14:00. ${countdownText}.`
+    : `⛳ VEO GEO LEAGUE — Scores close at 14:00. ${countdownText}.`
 
   const previewLines = [
     '⛳ VEO GEO LEAGUE — Morning Briefing',
     ...(customNote ? [`📌 ${customNote}`] : []),
+    ...(isDoubleDay ? ['⚡ DOUBLE POINTS DAY ⚡ — Scores count TWICE today!'] : []),
     '─────────────────',
     opener,
     '─────────────────',
@@ -122,15 +134,22 @@ export async function buildSummaryMessage(customNote?: string) {
     }
   }
 
+  // Load scoreCount from config
+  const now = new Date()
+  const config = await prisma.leagueConfig.findUnique({
+    where: { year_month: { year: now.getFullYear(), month: now.getMonth() } },
+  }).catch(() => null)
+  const scoreCount = config?.scoreCount ?? 15
+
   const { start: mStart, end: mEnd } = getMonthRange()
   const players = await prisma.player.findMany({
-    include: { scores: { where: { date: { gte: mStart, lte: mEnd } }, select: { total: true } } },
+    include: { scores: { where: { date: { gte: mStart, lte: mEnd } }, select: { total: true, isDoubleDay: true } } },
   })
   const monthlyStandings = players
     .map(p => ({
       name: p.name,
       flag: p.countryFlag,
-      avg: calcMonthlyAverage(p.scores.map(s => s.total)),
+      avg: calcMonthlyAverage(p.scores, scoreCount),
       games: p.scores.length,
     }))
     .filter(p => p.games > 0)
@@ -142,7 +161,8 @@ export async function buildSummaryMessage(customNote?: string) {
     const medal = MEDALS[i] ?? `${i + 1}.`
     const redCardBadge = score.redCards.length > 0 ? ` 🟥×${score.redCards.length}` : ''
     const perfect = score.total === 15000 ? ' ✨' : ''
-    return `${medal} ${score.player.countryFlag} *${score.player.name}* — ${score.total.toLocaleString()}${redCardBadge}${perfect}`
+    const doubleTag = score.isDoubleDay ? ' ⚡×2' : ''
+    return `${medal} ${score.player.countryFlag} *${score.player.name}* — ${score.total.toLocaleString()}${doubleTag}${redCardBadge}${perfect}`
   })
 
   const highlights: string[] = []
