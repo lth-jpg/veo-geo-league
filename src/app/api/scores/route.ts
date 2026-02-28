@@ -95,14 +95,22 @@ export async function POST(req: NextRequest) {
   // Check if today is a double-points day
   const isDoubleDay = config?.doubleDayDate === todayISO
 
+  // If this is an update, preserve the existing isDoubleDay flag so clearing
+  // double points mid-day doesn't retroactively remove it from earlier submissions
+  const existing = await prisma.score.findUnique({
+    where: { playerId_date: { playerId: parseInt(playerId), date: dateOnly } },
+    select: { isDoubleDay: true },
+  })
+  const effectiveDoubleDay = isDoubleDay || (existing?.isDoubleDay ?? false)
+
   try {
     const ranksBefore = await calcLeaderboardRanks(scoreCount, todayISO)
     const rankBefore = ranksBefore.get(parseInt(playerId)) ?? null
 
     const score = await prisma.score.upsert({
       where: { playerId_date: { playerId: parseInt(playerId), date: dateOnly } },
-      create: { playerId: parseInt(playerId), round1: r1, round2: r2, round3: r3, total, date: dateOnly, isDoubleDay },
-      update: { round1: r1, round2: r2, round3: r3, total, isDoubleDay },
+      create: { playerId: parseInt(playerId), round1: r1, round2: r2, round3: r3, total, date: dateOnly, isDoubleDay: effectiveDoubleDay },
+      update: { round1: r1, round2: r2, round3: r3, total, isDoubleDay: effectiveDoubleDay },
       include: { player: true },
     })
 

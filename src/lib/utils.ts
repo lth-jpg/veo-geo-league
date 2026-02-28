@@ -7,22 +7,6 @@ export function getMonthRange(year?: number, month?: number) {
   return { start, end }
 }
 
-export function getTodayRange() {
-  const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
-  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-  return { start, end }
-}
-
-// Returns "YYYY-MM-DD" for today (server local time)
-export function getTodayISODate(): string {
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  const d = String(now.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
 // Accepts scored objects; doubles effective score when isDoubleDay is true.
 // Sorts descending, takes top scoreCount, sums, divides by count of taken scores.
 export function calcMonthlyAverage(

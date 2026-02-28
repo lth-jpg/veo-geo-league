@@ -15,9 +15,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const now = new Date()
-    const year = now.getFullYear()
-    const month = now.getMonth()
+    // Use simulated date so the admin panel shows the correct month's config
+    const todayISO = await getEffectiveDateISO()
+    const { start } = isoToMonthRange(todayISO)
+    const year = start.getFullYear()
+    const month = start.getMonth()
 
     const config = await prisma.leagueConfig.findUnique({ where: { year_month: { year, month } } })
 
@@ -44,18 +46,19 @@ export async function GET(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json()
-    const { adminName, activeDays, scoreCount, simulatedDate } = body as {
+    const { adminName, activeDays, scoreCount, simulatedDate, clearDoubleDay } = body as {
       adminName: string
       activeDays?: string[]
       scoreCount?: number
       simulatedDate?: string | null
+      clearDoubleDay?: boolean
     }
 
     if (!checkAdmin(adminName)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
-    // Handle simulated date separately
+    // Handle simulated date
     if (simulatedDate !== undefined) {
       await prisma.appSettings.upsert({
         where: { id: 1 },
@@ -64,7 +67,17 @@ export async function PUT(req: NextRequest) {
       })
     }
 
-    // Handle active days + score count — save to the SIMULATED month if one is set
+    // Clear double points day for the simulated month
+    if (clearDoubleDay) {
+      const todayISO = await getEffectiveDateISO()
+      const { start } = isoToMonthRange(todayISO)
+      await prisma.leagueConfig.updateMany({
+        where: { year: start.getFullYear(), month: start.getMonth() },
+        data: { doubleDayDate: null },
+      })
+    }
+
+    // Handle active days + score count — save to the simulated month
     if (activeDays !== undefined && scoreCount !== undefined) {
       const todayISO = await getEffectiveDateISO()
       const { start } = isoToMonthRange(todayISO)
