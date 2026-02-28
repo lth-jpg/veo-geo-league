@@ -190,7 +190,7 @@ export default function VeoGeoApp() {
   const [editSaving, setEditSaving] = useState(false)
 
   // ── League config (public) ────────────────────────────────────────────────
-  const [leagueConfig, setLeagueConfig] = useState<LeagueConfig>({ isDoubleDay: false, activeDays: [], scoreCount: 15, daysRemaining: null, totalActiveDays: 0 })
+  const [leagueConfig, setLeagueConfig] = useState<LeagueConfig>({ effectiveDate: '', isDoubleDay: false, activeDays: [], scoreCount: 15, daysRemaining: null, totalActiveDays: 0 })
 
   // ── History tab ───────────────────────────────────────────────────────────
   const [historyScores, setHistoryScores] = useState<Score[]>([])
