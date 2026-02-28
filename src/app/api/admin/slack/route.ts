@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { postToSlack } from '@/lib/slack'
 import { buildMorningMessage, buildSummaryMessage } from '@/lib/slack-messages'
-import { getTodayISODate } from '@/lib/utils'
+import { getEffectiveDateISO, isoToMonthRange } from '@/lib/date-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,13 +36,13 @@ export async function POST(req: NextRequest) {
   // action === 'send'
   // If double points is enabled for morning post, persist it to the LeagueConfig
   if (type === 'morning' && doublePoints) {
-    const now = new Date()
-    const todayISO = getTodayISODate()
+    const todayISO = await getEffectiveDateISO()
+    const { start } = isoToMonthRange(todayISO)
     await prisma.leagueConfig.upsert({
-      where: { year_month: { year: now.getFullYear(), month: now.getMonth() } },
+      where: { year_month: { year: start.getFullYear(), month: start.getMonth() } },
       create: {
-        year: now.getFullYear(),
-        month: now.getMonth(),
+        year: start.getFullYear(),
+        month: start.getMonth(),
         doubleDayDate: todayISO,
       },
       update: { doubleDayDate: todayISO },

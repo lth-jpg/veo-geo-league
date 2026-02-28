@@ -104,3 +104,8 @@ model ChatMessage {
 
   @@index([createdAt])
 }
+
+model AppSettings {
+  id            Int     @id @default(1)
+  simulatedDate String? // YYYY-MM-DD override for testing; null = use real date
+}

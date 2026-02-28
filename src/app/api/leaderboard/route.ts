@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getMonthRange, calcMonthlyAverage } from '@/lib/utils'
+import { getEffectiveDateISO, isoToMonthRange } from '@/lib/date-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,11 +10,20 @@ export async function GET(req: NextRequest) {
   const year = searchParams.get('year') ? parseInt(searchParams.get('year')!) : undefined
   const month = searchParams.get('month') ? parseInt(searchParams.get('month')!) : undefined
 
-  const { start, end } = getMonthRange(year, month)
+  // Explicit archive month → use as-is (not affected by simulated date)
+  // No params → use simulated/real date's month
+  let start: Date, end: Date, configYear: number, configMonth: number
+  if (year !== undefined && month !== undefined) {
+    const range = getMonthRange(year, month)
+    start = range.start; end = range.end
+    configYear = year; configMonth = month
+  } else {
+    const range = isoToMonthRange(await getEffectiveDateISO())
+    start = range.start; end = range.end
+    configYear = start.getFullYear(); configMonth = start.getMonth()
+  }
 
   // Load scoreCount from config for current month (or archive month)
-  const configYear = year ?? start.getFullYear()
-  const configMonth = month ?? start.getMonth()
   const config = await prisma.leagueConfig.findUnique({
     where: { year_month: { year: configYear, month: configMonth } },
   })
