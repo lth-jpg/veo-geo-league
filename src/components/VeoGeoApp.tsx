@@ -204,7 +204,7 @@ export default function VeoGeoApp() {
   const [doublePointsToggle, setDoublePointsToggle] = useState(false)
 
   // ── Admin config panel ────────────────────────────────────────────────────
-  const [adminConfig, setAdminConfig] = useState<{ activeDays: string[]; scoreCount: number }>({ activeDays: [], scoreCount: 15 })
+  const [adminConfig, setAdminConfig] = useState<{ activeDays: string[]; scoreCount: number; doubleDayDate: string | null }>({ activeDays: [], scoreCount: 15, doubleDayDate: null })
   const [configSaving, setConfigSaving] = useState(false)
   const [simulatedDate, setSimulatedDate] = useState<string>('')
   const [simDateSaving, setSimDateSaving] = useState(false)
@@ -367,7 +367,7 @@ export default function VeoGeoApp() {
       const res = await fetch(`/api/admin/config?adminName=${encodeURIComponent(currentPlayer.name)}`)
       if (!res.ok) return
       const data = await res.json()
-      setAdminConfig({ activeDays: data.activeDays ?? [], scoreCount: data.scoreCount ?? 15 })
+      setAdminConfig({ activeDays: data.activeDays ?? [], scoreCount: data.scoreCount ?? 15, doubleDayDate: data.doubleDayDate ?? null })
       setSimulatedDate(data.simulatedDate ?? '')
     } catch { /* ignore */ }
   }, [currentPlayer])
@@ -404,6 +404,7 @@ export default function VeoGeoApp() {
       if (res.ok) {
         setSimulatedDate(dateValue || '')
         notify(dateValue ? `Simulated date set to ${dateValue}` : 'Simulated date cleared')
+        await Promise.all([fetchAdminConfig(), fetchLeagueConfig()])
       } else {
         notify('Failed to update simulated date', 'red')
       }
@@ -1574,6 +1575,40 @@ export default function VeoGeoApp() {
                           </div>
                           {simulatedDate && (
                             <p className="font-mono text-[9px] text-yellow-400 mt-1.5">⚠ App is using simulated date: {simulatedDate}</p>
+                          )}
+                        </div>
+
+                        {/* ── Double Points ── */}
+                        <div className={`rounded-lg p-3 border ${adminConfig.doubleDayDate ? 'border-yellow-500/40 bg-yellow-500/5' : 'border-veo-border'}`}>
+                          <label className="block font-mono text-[9px] text-veo-dim uppercase tracking-wider mb-2">
+                            Double Points Day
+                          </label>
+                          {adminConfig.doubleDayDate ? (
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-[11px] text-yellow-400">⚡ Active: {adminConfig.doubleDayDate}</span>
+                              <button
+                                onClick={async () => {
+                                  if (!currentPlayer) return
+                                  const res = await fetch('/api/admin/config', {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ adminName: currentPlayer.name, clearDoubleDay: true }),
+                                  })
+                                  if (res.ok) {
+                                    setAdminConfig(prev => ({ ...prev, doubleDayDate: null }))
+                                    notify('Double points cleared')
+                                    await fetchLeagueConfig()
+                                  } else {
+                                    notify('Failed to clear double points', 'red')
+                                  }
+                                }}
+                                className="px-3 py-1 rounded border border-veo-border text-veo-dim font-mono text-[10px] hover:border-veo-red/40 hover:text-veo-red transition-colors"
+                              >
+                                Turn Off
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="font-mono text-[10px] text-veo-dim">No double points active. Enable via Morning Briefing.</p>
                           )}
                         </div>
 
