@@ -28,6 +28,7 @@ type Score = {
   _count: { redCards: number }
 }
 type LeagueConfig = {
+  effectiveDate: string
   isDoubleDay: boolean
   activeDays: string[]
   scoreCount: number
@@ -1171,6 +1172,11 @@ export default function VeoGeoApp() {
                 <div className="flex items-center gap-2 mb-4">
                   <Calendar size={14} className="text-veo-green" />
                   <span className="font-display text-base font-700 tracking-wide text-white uppercase">Match Day Live</span>
+                  {leagueConfig && (
+                    <span className="font-mono text-[9px] text-veo-dim">
+                      {new Date(leagueConfig.effectiveDate + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </span>
+                  )}
                   {todayScores.length > 0 && (
                     <span className="ml-auto font-mono text-[9px] text-veo-green animate-pulse">● LIVE</span>
                   )}

@@ -22,6 +22,7 @@ export async function GET() {
     : null
 
   return NextResponse.json({
+    effectiveDate: todayISO,
     isDoubleDay,
     activeDays,
     scoreCount,

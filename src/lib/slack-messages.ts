@@ -1,7 +1,8 @@
 import { prisma } from '@/lib/prisma'
-import { getMonthRange, getTodayRange, calcMonthlyAverage } from '@/lib/utils'
+import { calcMonthlyAverage } from '@/lib/utils'
 import { veoHeader, veoSection, veoContext, veoDivider } from '@/lib/slack'
 import { morningOpener, winnerLine, loserLine, closeRaceLine, perfectLine, fullTurnoutLine, soloLine } from '@/lib/commentary'
+import { getEffectiveDateISO, isoToDateRange, isoToMonthRange } from '@/lib/date-utils'
 
 const MEDALS = ['🥇', '🥈', '🥉']
 
@@ -23,12 +24,12 @@ function getLastSunday(year: number, month: number): number {
 }
 
 export async function buildMorningMessage(customNote?: string, isDoubleDay?: boolean) {
-  const { start, end } = getMonthRange()
+  const todayISO = await getEffectiveDateISO()
+  const { start, end } = isoToMonthRange(todayISO)
 
-  // Load scoreCount from config
-  const now = new Date()
+  // Load scoreCount from config for the effective month
   const config = await prisma.leagueConfig.findUnique({
-    where: { year_month: { year: now.getFullYear(), month: now.getMonth() } },
+    where: { year_month: { year: start.getFullYear(), month: start.getMonth() } },
   }).catch(() => null)
   const scoreCount = config?.scoreCount ?? 15
 
@@ -105,7 +106,8 @@ export async function buildMorningMessage(customNote?: string, isDoubleDay?: boo
 }
 
 export async function buildSummaryMessage(customNote?: string) {
-  const { start, end } = getTodayRange()
+  const todayISO = await getEffectiveDateISO()
+  const { start, end } = isoToDateRange(todayISO)
   const todayScores = await prisma.score.findMany({
     where: { date: { gte: start, lte: end } },
     include: {
@@ -134,14 +136,13 @@ export async function buildSummaryMessage(customNote?: string) {
     }
   }
 
-  // Load scoreCount from config
-  const now = new Date()
+  // Load scoreCount from config for the effective month
+  const { start: mStart, end: mEnd } = isoToMonthRange(todayISO)
   const config = await prisma.leagueConfig.findUnique({
-    where: { year_month: { year: now.getFullYear(), month: now.getMonth() } },
+    where: { year_month: { year: mStart.getFullYear(), month: mStart.getMonth() } },
   }).catch(() => null)
   const scoreCount = config?.scoreCount ?? 15
 
-  const { start: mStart, end: mEnd } = getMonthRange()
   const players = await prisma.player.findMany({
     include: { scores: { where: { date: { gte: mStart, lte: mEnd } }, select: { total: true, isDoubleDay: true } } },
   })
@@ -205,6 +206,10 @@ export async function buildSummaryMessage(customNote?: string) {
     highlights.push(`👑 Monthly leader: ${monthlyLeader.flag} *${monthlyLeader.name}* (avg ${avg})`)
   }
 
+  // Use effective date for the footer, not real wall-clock date
+  const [fy, fm, fd] = todayISO.split('-').map(Number)
+  const footerDate = new Date(fy, fm - 1, fd).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+
   const blocks = [
     veoHeader('⛳ VEO GEO LEAGUE — Daily Wrap'),
     ...(customNote ? [veoSection(`📌 ${customNote}`)] : []),
@@ -213,7 +218,7 @@ export async function buildSummaryMessage(customNote?: string) {
     veoDivider(),
     veoSection('*Highlights*\n' + highlights.map(h => `• ${h}`).join('\n')),
     veoDivider(),
-    veoContext(`${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} • VEO GEO LEAGUE`),
+    veoContext(`${footerDate} • VEO GEO LEAGUE`),
   ]
 
   const fallbackText = `⛳ Daily Wrap — Top: ${top.player.name} ${top.total.toLocaleString()} | Bottom: ${bottom.player.name} ${bottom.total.toLocaleString()}`
@@ -228,7 +233,7 @@ export async function buildSummaryMessage(customNote?: string) {
     'Highlights:',
     ...highlights.map(h => `  • ${h}`),
     '─────────────────',
-    new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) + ' • VEO GEO LEAGUE',
+    footerDate + ' • VEO GEO LEAGUE',
   ]
 
   return { blocks, fallbackText, previewLines }
