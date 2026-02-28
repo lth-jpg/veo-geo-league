@@ -170,6 +170,18 @@ export default function VeoGeoApp() {
   const [dismissedNews, setDismissedNews] = useState<Set<number>>(new Set())
   const chatEndRef = useRef<HTMLDivElement>(null)
 
+  // ── Pin gate for Leo ──────────────────────────────────────────────────────
+  const [pinModal, setPinModal] = useState<{ player: Player } | null>(null)
+  const [pinInput, setPinInput] = useState('')
+  const [pinError, setPinError] = useState(false)
+
+  // ── Admin Slack panel ─────────────────────────────────────────────────────
+  const [adminSection, setAdminSection] = useState<'players' | 'morning' | 'summary'>('players')
+  const [slackPreview, setSlackPreview] = useState<{ morning: string[] | null; summary: string[] | null }>({ morning: null, summary: null })
+  const [slackLoading, setSlackLoading] = useState<{ morning: boolean; summary: boolean }>({ morning: false, summary: false })
+  const [slackSending, setSlackSending] = useState<{ morning: boolean; summary: boolean }>({ morning: false, summary: false })
+  const [slackNote, setSlackNote] = useState<{ morning: string; summary: string }>({ morning: '', summary: '' })
+
   // Load dismissed news IDs from localStorage on mount
   useEffect(() => {
     try {
@@ -280,6 +292,66 @@ export default function VeoGeoApp() {
   const selectPlayer = (p: Player) => {
     setCurrentPlayer(p)
     notify(`Welcome back, ${p.countryFlag} ${p.name}!`)
+  }
+
+  const handlePlayerClick = (p: Player) => {
+    if (p.name.toLowerCase() === 'leo') {
+      setPinModal({ player: p })
+      setPinInput('')
+      setPinError(false)
+    } else {
+      selectPlayer(p)
+    }
+  }
+
+  const submitPin = () => {
+    if (pinInput === '0874' && pinModal) {
+      selectPlayer(pinModal.player)
+      setPinModal(null)
+      setPinInput('')
+      setPinError(false)
+    } else {
+      setPinError(true)
+      setPinInput('')
+    }
+  }
+
+  const fetchSlackPreview = async (type: 'morning' | 'summary') => {
+    if (!currentPlayer) return
+    setSlackLoading(prev => ({ ...prev, [type]: true }))
+    setSlackPreview(prev => ({ ...prev, [type]: null }))
+    try {
+      const res = await fetch('/api/admin/slack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, action: 'preview', adminName: currentPlayer.name, customNote: slackNote[type] || undefined }),
+      })
+      const data = await res.json()
+      if (data.previewLines) setSlackPreview(prev => ({ ...prev, [type]: data.previewLines }))
+    } catch { /* ignore */ } finally {
+      setSlackLoading(prev => ({ ...prev, [type]: false }))
+    }
+  }
+
+  const sendSlack = async (type: 'morning' | 'summary') => {
+    if (!currentPlayer) return
+    setSlackSending(prev => ({ ...prev, [type]: true }))
+    try {
+      const res = await fetch('/api/admin/slack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, action: 'send', adminName: currentPlayer.name, customNote: slackNote[type] || undefined }),
+      })
+      if (res.ok) {
+        notify(`${type === 'morning' ? 'Morning briefing' : 'Daily summary'} sent to Slack!`)
+        setSlackPreview(prev => ({ ...prev, [type]: null }))
+        setSlackNote(prev => ({ ...prev, [type]: '' }))
+      } else {
+        notify('Failed to send to Slack', 'red')
+      }
+    } catch { notify('Failed to send to Slack', 'red') } finally {
+      setSlackSending(prev => ({ ...prev, [type]: false }))
+    }
   }
 
   const createPlayer = async () => {
@@ -457,6 +529,102 @@ export default function VeoGeoApp() {
         )}
       </AnimatePresence>
 
+      {/* ─── LEO PIN MODAL ─── */}
+      <AnimatePresence>
+        {pinModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            style={{ background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(10px)' }}
+            onClick={() => setPinModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="w-full max-w-xs bento-card p-6"
+              style={{ borderColor: 'rgba(255,48,48,0.4)', boxShadow: '0 0 40px rgba(255,48,48,0.2)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="text-center mb-5">
+                <div className="text-5xl mb-3">🔒</div>
+                <h2 className="font-display text-2xl font-900 text-veo-red tracking-wider uppercase">Admin Access</h2>
+                <p className="font-mono text-[10px] text-veo-dim mt-1">Enter pin to log in as {pinModal.player.countryFlag} {pinModal.player.name}</p>
+              </div>
+
+              {/* Pin dots display */}
+              <div className="flex justify-center gap-3 mb-5">
+                {[0,1,2,3].map(i => (
+                  <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all ${
+                    pinInput.length > i
+                      ? 'bg-veo-red border-veo-red'
+                      : 'bg-transparent border-veo-border'
+                  }`} />
+                ))}
+              </div>
+
+              {pinError && (
+                <p className="font-mono text-[10px] text-veo-red text-center mb-3 animate-pulse">Incorrect pin. Try again.</p>
+              )}
+
+              {/* Number pad */}
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map((key, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      if (key === '⌫') {
+                        setPinInput(p => p.slice(0,-1))
+                        setPinError(false)
+                      } else if (key === '') {
+                        // spacer
+                      } else if (typeof key === 'number' && pinInput.length < 4) {
+                        const next = pinInput + String(key)
+                        setPinInput(next)
+                        setPinError(false)
+                        if (next.length === 4) {
+                          // auto-submit
+                          setTimeout(() => {
+                            if (next === '0874' && pinModal) {
+                              selectPlayer(pinModal.player)
+                              setPinModal(null)
+                              setPinInput('')
+                              setPinError(false)
+                            } else {
+                              setPinError(true)
+                              setPinInput('')
+                            }
+                          }, 120)
+                        }
+                      }
+                    }}
+                    disabled={key === ''}
+                    className={`h-12 rounded-xl border font-display text-lg font-700 transition-all ${
+                      key === ''
+                        ? 'invisible'
+                        : key === '⌫'
+                        ? 'border-veo-border text-veo-dim hover:border-veo-muted hover:text-veo-text'
+                        : 'border-veo-border text-veo-text hover:border-veo-green/40 hover:bg-veo-green/5 active:scale-95'
+                    }`}
+                  >
+                    {key}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setPinModal(null)}
+                className="w-full font-mono text-[10px] text-veo-dim hover:text-veo-text transition-colors mt-1"
+              >
+                Cancel
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Notification toast */}
       <AnimatePresence>
         {notification && (
@@ -547,7 +715,7 @@ export default function VeoGeoApp() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-48 overflow-y-auto">
                   {filteredPlayers.map(p => (
-                    <button key={p.id} onClick={() => selectPlayer(p)}
+                    <button key={p.id} onClick={() => handlePlayerClick(p)}
                       className="flex items-center gap-2 px-3 py-2 rounded-lg border border-veo-border hover:border-veo-green/50 hover:bg-veo-green/5 transition-all text-left">
                       <span className="text-xl">{p.countryFlag}</span>
                       <span className="font-mono text-xs text-veo-text truncate">{p.name}</span>
@@ -877,30 +1045,133 @@ export default function VeoGeoApp() {
 
               {/* ─── LEO ADMIN PANEL ─── */}
               {isLeoAdmin && (
-                <div className="bento-card p-4 border-veo-red/30" style={{ borderColor: 'rgba(255,48,48,0.3)' }}>
-                  <div className="flex items-center gap-2 mb-3">
+                <div className="bento-card p-4" style={{ borderColor: 'rgba(255,48,48,0.35)', boxShadow: '0 0 30px rgba(255,48,48,0.08)' }}>
+                  {/* Header */}
+                  <div className="flex items-center gap-2 mb-4">
                     <Shield size={14} className="text-veo-red" />
                     <span className="font-display text-base font-700 tracking-wide text-veo-red uppercase">Admin Panel</span>
                     <span className="ml-auto font-mono text-[9px] text-veo-dim">Leo only</span>
                   </div>
-                  <p className="font-mono text-[10px] text-veo-dim mb-3">Remove any player from the league.</p>
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                    {players.filter(p => p.id !== currentPlayer!.id).map(p => (
-                      <div key={p.id} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-veo-border bg-black">
-                        <span className="text-lg">{p.countryFlag}</span>
-                        <span className="font-mono text-xs text-veo-text flex-1 truncate">{p.name}</span>
+
+                  {/* Section tabs */}
+                  <div className="flex gap-1.5 mb-4">
+                    {(['players', 'morning', 'summary'] as const).map(sec => (
+                      <button
+                        key={sec}
+                        onClick={() => setAdminSection(sec)}
+                        className={`flex-1 py-1.5 rounded-lg border font-mono text-[9px] uppercase tracking-wider transition-all ${
+                          adminSection === sec
+                            ? 'border-veo-red/60 bg-veo-red/10 text-veo-red'
+                            : 'border-veo-border text-veo-dim hover:border-veo-muted'
+                        }`}
+                      >
+                        {sec === 'players' ? '👥 Players' : sec === 'morning' ? '🌅 Morning' : '📊 Summary'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* ── Players section ── */}
+                  {adminSection === 'players' && (
+                    <div>
+                      <p className="font-mono text-[10px] text-veo-dim mb-3">Remove any player from the league.</p>
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                        {players.filter(p => p.id !== currentPlayer!.id).map(p => (
+                          <div key={p.id} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-veo-border bg-black">
+                            <span className="text-lg">{p.countryFlag}</span>
+                            <span className="font-mono text-xs text-veo-text flex-1 truncate">{p.name}</span>
+                            <button
+                              onClick={() => deletePlayer(p.id, p.name)}
+                              className="px-2 py-1 rounded border border-veo-red/40 text-veo-red font-mono text-[9px] hover:bg-veo-red/10 transition-colors"
+                            >
+                              REMOVE
+                            </button>
+                          </div>
+                        ))}
+                        {players.filter(p => p.id !== currentPlayer!.id).length === 0 && (
+                          <p className="font-mono text-[10px] text-veo-dim text-center py-2">No other players</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Morning / Summary Slack sections ── */}
+                  {(adminSection === 'morning' || adminSection === 'summary') && (() => {
+                    const type = adminSection
+                    const preview = slackPreview[type]
+                    const loading = slackLoading[type]
+                    const sending = slackSending[type]
+                    const note = slackNote[type]
+                    const label = type === 'morning' ? 'Morning Briefing' : 'Daily Summary'
+                    return (
+                      <div className="space-y-3">
+                        <p className="font-mono text-[10px] text-veo-dim">
+                          {type === 'morning'
+                            ? 'Preview and send the morning briefing to Slack.'
+                            : 'Preview and send the daily wrap-up to Slack.'}
+                        </p>
+
+                        {/* Custom note input */}
+                        <div>
+                          <label className="block font-mono text-[9px] text-veo-dim uppercase tracking-wider mb-1">
+                            Custom note (optional — prepended to message)
+                          </label>
+                          <input
+                            type="text"
+                            value={note}
+                            onChange={e => setSlackNote(prev => ({ ...prev, [type]: e.target.value }))}
+                            placeholder="e.g. Today is a double points day!"
+                            className="veo-input w-full px-3 py-2 rounded-lg text-xs"
+                          />
+                        </div>
+
+                        {/* Preview button */}
                         <button
-                          onClick={() => deletePlayer(p.id, p.name)}
-                          className="px-2 py-1 rounded border border-veo-red/40 text-veo-red font-mono text-[9px] hover:bg-veo-red/10 transition-colors"
+                          onClick={() => fetchSlackPreview(type)}
+                          disabled={loading}
+                          className="w-full py-2 rounded-lg border border-veo-border text-veo-dim font-mono text-[10px] hover:border-veo-muted hover:text-veo-text transition-all disabled:opacity-50"
                         >
-                          REMOVE
+                          {loading ? '⏳ Generating preview...' : `👁 Preview ${label}`}
+                        </button>
+
+                        {/* Preview box */}
+                        {preview && (
+                          <div className="rounded-xl border border-veo-border bg-black p-3 max-h-64 overflow-y-auto">
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <div className="w-2 h-2 rounded-full bg-veo-green" />
+                              <span className="font-mono text-[9px] text-veo-dim uppercase tracking-wider">Slack Preview</span>
+                            </div>
+                            <div className="space-y-0.5">
+                              {preview.map((line, i) => (
+                                <p key={i} className={`font-mono text-[10px] leading-relaxed ${
+                                  line.startsWith('─') ? 'text-veo-border' :
+                                  line.startsWith('⛳') ? 'text-veo-green font-bold text-xs' :
+                                  line.startsWith('📌') ? 'text-yellow-400' :
+                                  line.startsWith('  ') ? 'text-veo-text' :
+                                  line === '' ? 'h-1' :
+                                  'text-veo-muted'
+                                }`}>
+                                  {line || '\u00A0'}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Send button */}
+                        <button
+                          onClick={() => sendSlack(type)}
+                          disabled={sending}
+                          className={`w-full py-2.5 rounded-lg border font-mono text-[11px] font-bold uppercase tracking-wider transition-all disabled:opacity-50 ${
+                            preview
+                              ? 'border-veo-red/60 text-veo-red hover:bg-veo-red/10'
+                              : 'border-veo-border text-veo-dim hover:border-veo-red/40 hover:text-veo-red'
+                          }`}
+                        >
+                          {sending ? '📤 Sending...' : `🚀 Send ${label} to Slack`}
                         </button>
                       </div>
-                    ))}
-                    {players.filter(p => p.id !== currentPlayer!.id).length === 0 && (
-                      <p className="font-mono text-[10px] text-veo-dim text-center py-2">No other players</p>
-                    )}
-                  </div>
+                    )
+                  })()}
                 </div>
               )}
             </div>
