@@ -83,6 +83,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, skipped: 'weekend' })
   }
 
+  // Clear any stale takeover banners from the previous day
+  await prisma.breakingNews.deleteMany({ where: { type: 'takeover' } })
+
   // Check if we just entered a new month — lock previous month's winner
   await maybeLockPreviousMonthWinner(todayISO)
 
