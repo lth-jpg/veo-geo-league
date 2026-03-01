@@ -274,7 +274,7 @@ function TitleRaceChart({ data }: { data: TitleRaceData }) {
 }
 
 export default function VeoGeoApp() {
-  const [activeTab, setActiveTab] = useState<'leaderboard' | 'submit' | 'chat' | 'archive' | 'history' | 'wins' | 'titlerace'>('leaderboard')
+  const [activeTab, setActiveTab] = useState<'leaderboard' | 'submit' | 'archive' | 'history' | 'wins' | 'titlerace'>('leaderboard')
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null)
   const [players, setPlayers] = useState<Player[]>([])
   const [standings, setStandings] = useState<Standing[]>([])
@@ -640,6 +640,14 @@ export default function VeoGeoApp() {
     } else { notify('Error submitting score', 'red') }
   }
 
+  const postChatSystem = async (text: string) => {
+    await fetch('/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ authorName: 'League', text }),
+    })
+    await fetchChat()
+  }
+
   const giveRedCard = async (score: Score) => {
     if (!currentPlayer || redCardStatus.usedToday) return
     if (score.playerId === currentPlayer.id) { notify("Can't card yourself!", 'red'); return }
@@ -656,6 +664,11 @@ export default function VeoGeoApp() {
       setRedCardModal(null)
       setRedCardReason('')
       notify(`🟥 RED CARD issued to ${score.player.name}!`, 'red')
+      const reason = redCardReason.trim()
+      const msg = reason
+        ? `🟥 ${currentPlayer.countryFlag} ${currentPlayer.name} carded ${score.player.countryFlag} ${score.player.name} — "${reason}"`
+        : `🟥 ${currentPlayer.countryFlag} ${currentPlayer.name} gave a red card to ${score.player.countryFlag} ${score.player.name}!`
+      await postChatSystem(msg)
       await fetchTodayScores(); await fetchLeaderboard(); await fetchRedCardStatus()
     } else {
       const err = await res.json(); notify(err.error || 'Error', 'red')
@@ -678,6 +691,13 @@ export default function VeoGeoApp() {
       body: JSON.stringify({ playerId: currentPlayer.id, authorName: currentPlayer.name, text: chatInput.trim() }),
     })
     setChatInput(''); await fetchChat()
+  }
+
+  const deleteChat = async (msgId: number) => {
+    if (!isLeoAdmin || !currentPlayer) return
+    const res = await fetch(`/api/chat?id=${msgId}&adminName=${encodeURIComponent(currentPlayer.name)}`, { method: 'DELETE' })
+    if (res.ok) { await fetchChat() }
+    else { const err = await res.json(); notify(err.error || 'Error deleting message', 'red') }
   }
 
   const isLeoAdmin = currentPlayer?.name.toLowerCase() === 'leo'
@@ -1348,7 +1368,6 @@ export default function VeoGeoApp() {
             { id: 'leaderboard', icon: <Trophy size={14}/>, label: 'STANDINGS' },
             { id: 'history', icon: <Calendar size={14}/>, label: 'HISTORY' },
             { id: 'submit', icon: <Zap size={14}/>, label: 'SUBMIT' },
-            { id: 'chat', icon: <MessageSquare size={14}/>, label: 'TRASH TALK' },
             { id: 'archive', icon: <Archive size={14}/>, label: 'ARCHIVE' },
             { id: 'wins', icon: <Award size={14}/>, label: 'HALL OF FAME' },
             { id: 'titlerace', icon: <BarChart2 size={14}/>, label: 'TITLE RACE' },
@@ -1369,8 +1388,71 @@ export default function VeoGeoApp() {
 
         {/* ─── LEADERBOARD ─── */}
         {activeTab === 'leaderboard' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-2 space-y-3">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr_1fr] gap-4">
+
+            {/* ── TRASH TALK (left column) ── */}
+            <div className="bento-card flex flex-col" style={{height:'clamp(400px,70vh,720px)'}}>
+              <div className="flex items-center gap-2 p-3 border-b border-veo-border flex-shrink-0">
+                <MessageSquare size={13} className="text-veo-green"/>
+                <span className="font-display text-sm font-700 tracking-wide text-white uppercase">Trash Talk</span>
+                <span className="ml-auto font-mono text-[9px] text-veo-dim">LIVE</span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
+                {chatMessages.length === 0 ? (
+                  <div className="text-center py-8 text-veo-dim font-mono text-xs">No messages yet</div>
+                ) : chatMessages.map(msg => {
+                  const isSystem = msg.authorName === 'League'
+                  return (
+                    <div key={msg.id} className={`group animate-fade-in ${isSystem ? '' : ''}`}>
+                      {isSystem ? (
+                        <div className="flex items-center gap-1.5 py-1">
+                          <div className="flex-1 font-mono text-[10px] text-veo-red/80 italic leading-snug">{msg.text}</div>
+                          {isLeoAdmin && (
+                            <button onClick={() => deleteChat(msg.id)} className="opacity-0 group-hover:opacity-100 p-0.5 text-veo-dim hover:text-veo-red transition-all flex-shrink-0"><X size={9}/></button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-1.5">
+                          <div className="flex-shrink-0 text-base leading-none mt-0.5">{msg.player?.countryFlag ?? '💬'}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline gap-1.5 mb-0.5">
+                              <span className="font-mono text-[9px] text-veo-green font-bold truncate">{msg.authorName}</span>
+                              <span className="font-mono text-[8px] text-veo-dim flex-shrink-0">
+                                {new Date(msg.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+                              </span>
+                            </div>
+                            <div className="p-1.5 rounded-lg bg-black border border-veo-border font-mono text-[10px] text-veo-text leading-snug break-words">{msg.text}</div>
+                          </div>
+                          {isLeoAdmin && (
+                            <button onClick={() => deleteChat(msg.id)} className="opacity-0 group-hover:opacity-100 p-0.5 text-veo-dim hover:text-veo-red transition-all flex-shrink-0 mt-0.5"><X size={9}/></button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+                <div ref={chatEndRef}/>
+              </div>
+              <div className="p-2 border-t border-veo-border flex-shrink-0">
+                {!currentPlayer ? (
+                  <p className="text-center font-mono text-[10px] text-veo-dim py-1">Sign in to chat</p>
+                ) : (
+                  <div className="flex gap-1.5">
+                    <input value={chatInput} onChange={e=>setChatInput(e.target.value)}
+                      onKeyDown={e=>e.key==='Enter'&&sendChat()}
+                      placeholder="Say something..."
+                      className="veo-input flex-1 px-2.5 py-1.5 rounded-lg text-[11px]"/>
+                    <button onClick={sendChat} disabled={!chatInput.trim()}
+                      className="px-2.5 py-1.5 rounded-lg bg-veo-green/20 border border-veo-green/30 text-veo-green hover:bg-veo-green/30 disabled:opacity-30 transition-all">
+                      <Send size={11}/>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── STANDINGS (center column) ── */}
+            <div className="space-y-3">
               <div className="bento-card p-4">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
@@ -2045,57 +2127,6 @@ export default function VeoGeoApp() {
           </div>
         )}
 
-        {/* ─── CHAT ─── */}
-        {activeTab === 'chat' && (
-          <div className="max-w-2xl mx-auto">
-            <div className="bento-card flex flex-col" style={{height:'70vh'}}>
-              <div className="flex items-center gap-2 p-4 border-b border-veo-border">
-                <MessageSquare size={16} className="text-veo-green"/>
-                <span className="font-display text-xl font-700 tracking-wide text-white uppercase">League Chat</span>
-                <span className="ml-auto font-mono text-[10px] text-veo-dim">TRASH TALK CENTRAL</span>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {chatMessages.length === 0 ? (
-                  <div className="text-center py-12 text-veo-dim font-mono text-sm">No messages yet. Start the trash talk!</div>
-                ) : chatMessages.map(msg => (
-                  <div key={msg.id} className="animate-fade-in">
-                    <div className="flex items-start gap-2">
-                      <div className="flex-shrink-0">{msg.player && <span className="text-xl">{msg.player.countryFlag}</span>}</div>
-                      <div className="flex-1">
-                        <div className="flex items-baseline gap-2 mb-1">
-                          <span className="font-mono text-[10px] text-veo-green font-bold">{msg.authorName}</span>
-                          <span className="font-mono text-[9px] text-veo-dim">
-                            {new Date(msg.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
-                          </span>
-                        </div>
-                        <div className="p-2.5 rounded-xl bg-black border border-veo-border font-mono text-xs text-veo-text leading-relaxed">
-                          {msg.text}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                <div ref={chatEndRef}/>
-              </div>
-              <div className="p-4 border-t border-veo-border">
-                {!currentPlayer ? (
-                  <p className="text-center font-mono text-xs text-veo-dim">Sign in to chat</p>
-                ) : (
-                  <div className="flex gap-2">
-                    <input value={chatInput} onChange={e=>setChatInput(e.target.value)}
-                      onKeyDown={e=>e.key==='Enter'&&sendChat()}
-                      placeholder={`Trash talk as ${currentPlayer.name}...`}
-                      className="veo-input flex-1 px-4 py-2.5 rounded-xl text-sm"/>
-                    <button onClick={sendChat} disabled={!chatInput.trim()}
-                      className="px-4 py-2.5 rounded-xl bg-veo-green text-black font-mono font-bold hover:bg-veo-green/90 disabled:opacity-30 transition-all">
-                      <Send size={14}/>
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* ─── HISTORY ─── */}
         {activeTab === 'history' && (
