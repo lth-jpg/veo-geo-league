@@ -340,6 +340,9 @@ export default function VeoGeoApp() {
   const [configSaving, setConfigSaving] = useState(false)
   const [simulatedDate, setSimulatedDate] = useState<string>('')
   const [simDateSaving, setSimDateSaving] = useState(false)
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
+  const [resetConfirmText, setResetConfirmText] = useState('')
+  const [resetLoading, setResetLoading] = useState(false)
 
   // Load dismissed news IDs from localStorage on mount
   useEffect(() => {
@@ -723,6 +726,45 @@ export default function VeoGeoApp() {
     }
   }
 
+  const deleteScore = async (scoreId: number, playerName: string) => {
+    if (!isLeoAdmin || !currentPlayer) return
+    const res = await fetch(`/api/scores?id=${scoreId}&adminName=${encodeURIComponent(currentPlayer.name)}`, {
+      method: 'DELETE',
+    })
+    if (res.ok) {
+      notify(`${playerName}'s score removed.`, 'red')
+      await Promise.all([fetchLeaderboard(), fetchTodayScores(), fetchHistoryScores()])
+      if (titleRaceLoaded) fetchTitleRace()
+    } else {
+      const err = await res.json(); notify(err.error || 'Error removing score', 'red')
+    }
+  }
+
+  const resetGame = async () => {
+    if (!isLeoAdmin || !currentPlayer) return
+    setResetLoading(true)
+    try {
+      const res = await fetch('/api/admin/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminName: currentPlayer.name, confirm: 'RESET' }),
+      })
+      if (res.ok) {
+        setResetConfirmOpen(false)
+        setResetConfirmText('')
+        notify('League reset. All scores cleared.', 'red')
+        await Promise.all([fetchLeaderboard(), fetchTodayScores(), fetchChat(), fetchBreakingNews()])
+        setHistoryScores([]); setHistoryLoaded(false)
+        setMonthlyWins([]); setWinsLoaded(false)
+        setTitleRace(null); setTitleRaceLoaded(false)
+      } else {
+        const err = await res.json(); notify(err.error || 'Reset failed', 'red')
+      }
+    } catch { notify('Reset failed', 'red') } finally {
+      setResetLoading(false)
+    }
+  }
+
   const total = (parseInt(r1)||0)+(parseInt(r2)||0)+(parseInt(r3)||0)
   const filteredPlayers = players.filter(p =>
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.countryFlag.includes(searchQuery)
@@ -812,6 +854,66 @@ export default function VeoGeoApp() {
                 </button>
               </div>
             </motion.div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── RESET CONFIRM MODAL ─── */}
+      <AnimatePresence>
+        {resetConfirmOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 overflow-y-auto"
+            style={{ background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(8px)' }}
+            onClick={() => { setResetConfirmOpen(false); setResetConfirmText('') }}
+          >
+            <div className="flex min-h-full items-center justify-center p-4">
+              <motion.div
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                className="w-full max-w-sm bento-card p-6"
+                style={{ border: '1px solid rgba(255,48,48,0.5)' }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="text-center mb-6">
+                  <div className="text-6xl mb-3">⚠️</div>
+                  <h2 className="font-display text-3xl font-900 text-veo-red tracking-wider uppercase">Reset League</h2>
+                  <p className="font-mono text-xs text-veo-dim mt-2 leading-relaxed">
+                    This will permanently delete <span className="text-white">all scores, red cards, comments, chat, and monthly wins</span>. Players and config are kept.
+                  </p>
+                </div>
+                <div className="mb-4">
+                  <label className="block font-mono text-[10px] text-veo-dim mb-1.5 uppercase tracking-wider">
+                    Type <span className="text-veo-red font-bold">RESET</span> to confirm
+                  </label>
+                  <input
+                    value={resetConfirmText}
+                    onChange={e => setResetConfirmText(e.target.value)}
+                    placeholder="RESET"
+                    className="veo-input w-full px-3 py-2 rounded-lg text-sm font-mono text-center tracking-widest"
+                    autoFocus
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setResetConfirmOpen(false); setResetConfirmText('') }}
+                    className="flex-1 py-3 rounded-xl border border-veo-border text-veo-dim font-mono text-sm hover:border-veo-muted transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={resetGame}
+                    disabled={resetConfirmText !== 'RESET' || resetLoading}
+                    className="flex-1 py-3 rounded-xl border border-veo-red bg-veo-red/10 text-veo-red font-display text-lg font-900 tracking-wider hover:bg-veo-red/20 transition-all disabled:opacity-40"
+                  >
+                    {resetLoading ? 'Resetting…' : '🗑 RESET'}
+                  </button>
+                </div>
+              </motion.div>
             </div>
           </motion.div>
         )}
@@ -1407,10 +1509,21 @@ export default function VeoGeoApp() {
                           </div>
                           {expandedScore===score.id && (
                             <div className="ml-2 mt-1 p-3 rounded-xl bg-veo-surface border border-veo-border animate-slide-in">
-                              <div className="flex gap-2 mb-2 font-mono text-[10px] text-veo-dim">
-                                <span>R1: {score.round1.toLocaleString()}</span>
-                                <span>R2: {score.round2.toLocaleString()}</span>
-                                <span>R3: {score.round3.toLocaleString()}</span>
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="flex gap-2 font-mono text-[10px] text-veo-dim flex-1">
+                                  <span>R1: {score.round1.toLocaleString()}</span>
+                                  <span>R2: {score.round2.toLocaleString()}</span>
+                                  <span>R3: {score.round3.toLocaleString()}</span>
+                                </div>
+                                {isLeoAdmin && (
+                                  <button
+                                    onClick={e => { e.stopPropagation(); deleteScore(score.id, score.player.name) }}
+                                    className="flex items-center gap-1 px-2 py-1 rounded border border-veo-red/40 text-veo-red font-mono text-[9px] hover:bg-veo-red/10 transition-colors"
+                                    title="Delete this score"
+                                  >
+                                    🗑 DELETE
+                                  </button>
+                                )}
                               </div>
                               {score.comments.length > 0 && (
                                 <div className="space-y-1.5 mb-2">
@@ -1532,24 +1645,38 @@ export default function VeoGeoApp() {
 
                   {/* ── Players section ── */}
                   {adminSection === 'players' && (
-                    <div>
-                      <p className="font-mono text-[10px] text-veo-dim mb-3">Remove any player from the league.</p>
-                      <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                        {players.filter(p => p.id !== currentPlayer!.id).map(p => (
-                          <div key={p.id} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-veo-border bg-black">
-                            <span className="text-lg">{p.countryFlag}</span>
-                            <span className="font-mono text-xs text-veo-text flex-1 truncate">{p.name}</span>
-                            <button
-                              onClick={() => deletePlayer(p.id, p.name)}
-                              className="px-2 py-1 rounded border border-veo-red/40 text-veo-red font-mono text-[9px] hover:bg-veo-red/10 transition-colors"
-                            >
-                              REMOVE
-                            </button>
-                          </div>
-                        ))}
-                        {players.filter(p => p.id !== currentPlayer!.id).length === 0 && (
-                          <p className="font-mono text-[10px] text-veo-dim text-center py-2">No other players</p>
-                        )}
+                    <div className="space-y-4">
+                      <div>
+                        <p className="font-mono text-[10px] text-veo-dim mb-3">Remove any player from the league.</p>
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                          {players.filter(p => p.id !== currentPlayer!.id).map(p => (
+                            <div key={p.id} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-veo-border bg-black">
+                              <span className="text-lg">{p.countryFlag}</span>
+                              <span className="font-mono text-xs text-veo-text flex-1 truncate">{p.name}</span>
+                              <button
+                                onClick={() => deletePlayer(p.id, p.name)}
+                                className="px-2 py-1 rounded border border-veo-red/40 text-veo-red font-mono text-[9px] hover:bg-veo-red/10 transition-colors"
+                              >
+                                REMOVE
+                              </button>
+                            </div>
+                          ))}
+                          {players.filter(p => p.id !== currentPlayer!.id).length === 0 && (
+                            <p className="font-mono text-[10px] text-veo-dim text-center py-2">No other players</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* ── Danger Zone ── */}
+                      <div className="rounded-lg border border-veo-red/30 p-3 bg-veo-red/5">
+                        <p className="font-mono text-[9px] text-veo-red uppercase tracking-wider mb-2">⚠ Danger Zone</p>
+                        <p className="font-mono text-[10px] text-veo-dim mb-3">Wipe all scores, red cards, chat and wins. Players and config kept.</p>
+                        <button
+                          onClick={() => setResetConfirmOpen(true)}
+                          className="w-full py-2 rounded-lg border border-veo-red/50 text-veo-red font-mono text-[10px] font-bold uppercase tracking-wider hover:bg-veo-red/10 transition-colors"
+                        >
+                          🗑 Reset Entire League
+                        </button>
                       </div>
                     </div>
                   )}
@@ -2024,6 +2151,15 @@ export default function VeoGeoApp() {
                               <span>·</span>
                               <span>{score.round3.toLocaleString()}</span>
                             </div>
+                            {isLeoAdmin && (
+                              <button
+                                onClick={() => deleteScore(score.id, score.player.name)}
+                                className="p-1 rounded border border-veo-red/30 text-veo-red hover:bg-veo-red/10 transition-colors flex-shrink-0"
+                                title="Delete score"
+                              >
+                                <X size={10}/>
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>

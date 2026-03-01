@@ -66,6 +66,29 @@ async function calcLeaderboardRanks(scoreCount = 15, todayISO: string): Promise<
   return rankMap
 }
 
+export async function DELETE(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const scoreId = searchParams.get('id')
+  const adminName = searchParams.get('adminName')
+
+  if (adminName?.toLowerCase() !== 'leo') {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
+  if (!scoreId) {
+    return NextResponse.json({ error: 'Score ID required' }, { status: 400 })
+  }
+
+  try {
+    // Delete dependent records first (no cascade in schema)
+    await prisma.comment.deleteMany({ where: { scoreId: parseInt(scoreId) } })
+    await prisma.redCard.deleteMany({ where: { scoreId: parseInt(scoreId) } })
+    await prisma.score.delete({ where: { id: parseInt(scoreId) } })
+    return NextResponse.json({ ok: true })
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 })
+  }
+}
+
 export async function POST(req: NextRequest) {
   const { playerId, round1, round2, round3 } = await req.json()
   if (!playerId) return NextResponse.json({ error: 'Player required' }, { status: 400 })
