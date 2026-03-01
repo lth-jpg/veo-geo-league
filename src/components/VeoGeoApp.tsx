@@ -549,16 +549,18 @@ export default function VeoGeoApp() {
       const res = await fetch('/api/admin/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminName: currentPlayer.name, simulatedDate: dateValue || null }),
+        body: JSON.stringify({ adminName: currentPlayer.name, simulatedDate: dateValue ?? null }),
       })
       if (res.ok) {
         setSimulatedDate(dateValue || '')
         notify(dateValue ? `Simulated date set to ${dateValue}` : 'Simulated date cleared')
         await Promise.all([fetchAdminConfig(), fetchLeagueConfig()])
       } else {
-        notify('Failed to update simulated date', 'red')
+        let msg = 'Failed to update simulated date'
+        try { const err = await res.json(); if (err?.error) msg = err.error } catch { /* ignore */ }
+        notify(msg, 'red')
       }
-    } catch { notify('Failed', 'red') } finally {
+    } catch (e) { notify(`Error: ${e}`, 'red') } finally {
       setSimDateSaving(false)
     }
   }
