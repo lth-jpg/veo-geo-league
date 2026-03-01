@@ -344,13 +344,24 @@ export default function VeoGeoApp() {
   const [resetConfirmText, setResetConfirmText] = useState('')
   const [resetLoading, setResetLoading] = useState(false)
 
-  // Load dismissed news IDs from localStorage on mount
+  // Load dismissed news IDs + remembered player from localStorage on mount
   useEffect(() => {
     try {
       const stored = localStorage.getItem('dismissedNews')
       if (stored) setDismissedNews(new Set(JSON.parse(stored) as number[]))
     } catch { /* ignore */ }
   }, [])
+
+  // Once players load, auto-restore the remembered player
+  useEffect(() => {
+    if (players.length === 0 || currentPlayer) return
+    try {
+      const savedId = localStorage.getItem('currentPlayerId')
+      if (!savedId) return
+      const found = players.find(p => p.id === parseInt(savedId))
+      if (found) setCurrentPlayer(found)
+    } catch { /* ignore */ }
+  }, [players]) // currentPlayer intentionally excluded — guard handles the truthy case
 
   const notify = (msg: string, type: 'green' | 'red' = 'green') => {
     setNotification({ msg, type })
@@ -462,7 +473,13 @@ export default function VeoGeoApp() {
 
   const selectPlayer = (p: Player) => {
     setCurrentPlayer(p)
+    try { localStorage.setItem('currentPlayerId', String(p.id)) } catch { /* ignore */ }
     notify(`Welcome back, ${p.countryFlag} ${p.name}!`)
+  }
+
+  const deselectPlayer = () => {
+    setCurrentPlayer(null)
+    try { localStorage.removeItem('currentPlayerId') } catch { /* ignore */ }
   }
 
   const handlePlayerClick = (p: Player) => {
@@ -1205,7 +1222,7 @@ export default function VeoGeoApp() {
                   <span className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-veo-red/40 text-veo-red bg-veo-red/10 leading-none">ADMIN</span>
                 )}
                 <button onClick={openEditProfile} title="Edit name / emoji" className="text-veo-dim hover:text-veo-green ml-1 transition-colors"><Pencil size={11} /></button>
-                <button onClick={() => setCurrentPlayer(null)} className="text-veo-dim hover:text-veo-red"><X size={12} /></button>
+                <button onClick={deselectPlayer} className="text-veo-dim hover:text-veo-red"><X size={12} /></button>
               </div>
             ) : (
               <div className="text-veo-dim font-mono text-xs">← Select player</div>

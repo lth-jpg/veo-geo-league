@@ -162,7 +162,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (rankAfter === 1 && (rankBefore === null || rankBefore > 1)) {
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
+      // Remove any existing takeover banners — only one leader at a time
+      await prisma.breakingNews.deleteMany({ where: { type: 'takeover' } })
+      // Expire at end of effective day so the banner clears on a new day
+      const expiresAt = new Date(y, m - 1, d, 23, 59, 59, 999)
       await prisma.breakingNews.create({
         data: {
           type: 'takeover',
