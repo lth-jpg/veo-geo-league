@@ -6,7 +6,7 @@ import {
   Trophy, Flag, MessageSquare, Zap, ChevronDown, Search,
   Send, Archive, RefreshCw, Star, X, Plus, Check,
   TrendingUp, Users, Calendar, Shield, AlertTriangle,
-  ArrowUp, ArrowDown, Pencil,
+  ArrowUp, ArrowDown, Pencil, Award, BarChart2,
 } from 'lucide-react'
 
 type Player = { id: number; name: string; countryFlag: string }
@@ -42,6 +42,16 @@ type BreakingNewsItem = {
   id: number; type: string; message: string
   playerId: number; player: Player
   expiresAt: string; createdAt: string
+}
+type MonthlyWinEntry = {
+  id: number; name: string; countryFlag: string; winCount: number
+  months: { year: number; month: number; avgScore: number; label: string }[]
+}
+type TitleRacePlayer = {
+  id: number; name: string; countryFlag: string; averages: (number | null)[]
+}
+type TitleRaceData = {
+  days: string[]; players: TitleRacePlayer[]; scoreCount: number
 }
 
 // ─── BREAKING NEWS BANNER ───
@@ -150,8 +160,121 @@ function ScoreTag({ total }: { total: number }) {
   )
 }
 
+// ─── TITLE RACE CHART (pure SVG, no dependencies) ───
+const CHART_COLORS = [
+  '#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6',
+  '#06b6d4', '#f97316', '#ec4899', '#14b8a6', '#a3e635',
+]
+
+function TitleRaceChart({ data }: { data: TitleRaceData }) {
+  const { days, players } = data
+  const W = 800, H = 320
+  const PAD = { top: 20, right: 16, bottom: 48, left: 62 }
+  const chartW = W - PAD.left - PAD.right
+  const chartH = H - PAD.top - PAD.bottom
+
+  // Y axis: 0 to max average (rounded up to nearest 1000)
+  const allVals = players.flatMap(p => p.averages.filter((v): v is number => v !== null))
+  const maxVal = allVals.length > 0 ? Math.max(...allVals) : 15000
+  const yMax = Math.ceil(maxVal / 1000) * 1000 || 15000
+
+  const xOf = (dayIdx: number) => days.length === 1 ? PAD.left + chartW / 2 : PAD.left + (dayIdx / (days.length - 1)) * chartW
+  const yOf = (val: number) => PAD.top + chartH - (val / yMax) * chartH
+
+  // Y grid lines every 2000
+  const yGridStep = yMax <= 6000 ? 1000 : 2000
+  const yGridLines: number[] = []
+  for (let v = 0; v <= yMax; v += yGridStep) yGridLines.push(v)
+
+  // Format day labels as "Feb 3"
+  const fmtDay = (iso: string) => {
+    const [y, m, d] = iso.split('-').map(Number)
+    return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+
+  return (
+    <div className="w-full overflow-x-auto">
+      {/* Legend */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-3">
+        {players.map((p, i) => {
+          const lastVal = p.averages.findLast(v => v !== null)
+          return (
+            <div key={p.id} className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }}/>
+              <span className="font-mono text-[11px] text-veo-text">{p.countryFlag} {p.name}</span>
+              {lastVal != null && <span className="font-mono text-[10px] text-veo-dim">({lastVal.toFixed(0)})</span>}
+            </div>
+          )
+        })}
+      </div>
+
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: Math.max(320, days.length * 40) }}>
+        {/* Grid lines */}
+        {yGridLines.map(v => (
+          <g key={v}>
+            <line x1={PAD.left} x2={PAD.left + chartW} y1={yOf(v)} y2={yOf(v)} stroke="#2a2a2a" strokeWidth={1}/>
+            <text x={PAD.left - 6} y={yOf(v) + 4} textAnchor="end" fontSize={10} fill="#666" fontFamily="monospace">
+              {v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}
+            </text>
+          </g>
+        ))}
+
+        {/* X axis day labels */}
+        {days.map((day, i) => (
+          <text key={day} x={xOf(i)} y={H - 4} textAnchor="middle" fontSize={10} fill="#666" fontFamily="monospace">
+            {fmtDay(day)}
+          </text>
+        ))}
+
+        {/* Player lines */}
+        {players.map((p, pi) => {
+          const color = CHART_COLORS[pi % CHART_COLORS.length]
+          // Build polyline points, skipping nulls
+          const segments: { x: number; y: number }[][] = []
+          let current: { x: number; y: number }[] = []
+          for (let i = 0; i < days.length; i++) {
+            const v = p.averages[i]
+            if (v !== null) {
+              current.push({ x: xOf(i), y: yOf(v) })
+            } else {
+              if (current.length > 0) { segments.push(current); current = [] }
+            }
+          }
+          if (current.length > 0) segments.push(current)
+
+          return (
+            <g key={p.id}>
+              {segments.map((seg, si) => (
+                <polyline
+                  key={si}
+                  points={seg.map(pt => `${pt.x},${pt.y}`).join(' ')}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={2.5}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+              ))}
+              {/* Dots at each data point */}
+              {days.map((_, i) => {
+                const v = p.averages[i]
+                if (v === null) return null
+                return <circle key={i} cx={xOf(i)} cy={yOf(v)} r={4} fill={color} stroke="#111" strokeWidth={1.5}/>
+              })}
+            </g>
+          )
+        })}
+
+        {/* Axes */}
+        <line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={PAD.top + chartH} stroke="#444" strokeWidth={1}/>
+        <line x1={PAD.left} x2={PAD.left + chartW} y1={PAD.top + chartH} y2={PAD.top + chartH} stroke="#444" strokeWidth={1}/>
+      </svg>
+    </div>
+  )
+}
+
 export default function VeoGeoApp() {
-  const [activeTab, setActiveTab] = useState<'leaderboard' | 'submit' | 'chat' | 'archive' | 'history'>('leaderboard')
+  const [activeTab, setActiveTab] = useState<'leaderboard' | 'submit' | 'chat' | 'archive' | 'history' | 'wins' | 'titlerace'>('leaderboard')
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null)
   const [players, setPlayers] = useState<Player[]>([])
   const [standings, setStandings] = useState<Standing[]>([])
@@ -195,6 +318,14 @@ export default function VeoGeoApp() {
   // ── History tab ───────────────────────────────────────────────────────────
   const [historyScores, setHistoryScores] = useState<Score[]>([])
   const [historyLoaded, setHistoryLoaded] = useState(false)
+
+  // ── Wins / Hall of Fame tab ───────────────────────────────────────────────
+  const [monthlyWins, setMonthlyWins] = useState<MonthlyWinEntry[]>([])
+  const [winsLoaded, setWinsLoaded] = useState(false)
+
+  // ── Title Race tab ────────────────────────────────────────────────────────
+  const [titleRace, setTitleRace] = useState<TitleRaceData | null>(null)
+  const [titleRaceLoaded, setTitleRaceLoaded] = useState(false)
 
   // ── Admin Slack panel ─────────────────────────────────────────────────────
   const [adminSection, setAdminSection] = useState<'players' | 'morning' | 'summary' | 'config'>('players')
@@ -359,6 +490,24 @@ export default function VeoGeoApp() {
       if (!res.ok) return
       const data = await res.json()
       if (Array.isArray(data)) { setHistoryScores(data); setHistoryLoaded(true) }
+    } catch { /* ignore */ }
+  }, [])
+
+  const fetchMonthlyWins = useCallback(async () => {
+    try {
+      const res = await fetch('/api/monthly-wins')
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.wins) { setMonthlyWins(data.wins); setWinsLoaded(true) }
+    } catch { /* ignore */ }
+  }, [])
+
+  const fetchTitleRace = useCallback(async () => {
+    try {
+      const res = await fetch('/api/title-race')
+      if (!res.ok) return
+      const data = await res.json()
+      setTitleRace(data); setTitleRaceLoaded(true)
     } catch { /* ignore */ }
   }, [])
 
@@ -1097,10 +1246,14 @@ export default function VeoGeoApp() {
             { id: 'submit', icon: <Zap size={14}/>, label: 'SUBMIT' },
             { id: 'chat', icon: <MessageSquare size={14}/>, label: 'TRASH TALK' },
             { id: 'archive', icon: <Archive size={14}/>, label: 'ARCHIVE' },
+            { id: 'wins', icon: <Award size={14}/>, label: 'HALL OF FAME' },
+            { id: 'titlerace', icon: <BarChart2 size={14}/>, label: 'TITLE RACE' },
           ].map(tab => (
             <button key={tab.id} onClick={() => {
               setActiveTab(tab.id as typeof activeTab)
               if (tab.id === 'history' && !historyLoaded) fetchHistoryScores()
+              if (tab.id === 'wins' && !winsLoaded) fetchMonthlyWins()
+              if (tab.id === 'titlerace' && !titleRaceLoaded) fetchTitleRace()
             }}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-lg font-mono text-xs tracking-wider transition-all ${
                 activeTab === tab.id ? 'bg-veo-green text-black font-bold' : 'text-veo-dim hover:text-veo-text'
@@ -1949,6 +2102,75 @@ export default function VeoGeoApp() {
             </div>
           </div>
         )}
+
+        {/* ─── HALL OF FAME ─── */}
+        {activeTab === 'wins' && (
+          <div className="space-y-4">
+            <div className="bento-card p-4">
+              <div className="flex items-center gap-2 mb-6">
+                <Award size={14} className="text-veo-green"/>
+                <span className="font-display text-lg font-700 tracking-wide text-white uppercase">Hall of Fame</span>
+                <span className="ml-auto font-mono text-[10px] text-veo-dim">MONTHLY CHAMPIONS</span>
+              </div>
+              {!winsLoaded ? (
+                <p className="text-center text-veo-dim font-mono text-sm py-8">Loading…</p>
+              ) : monthlyWins.length === 0 ? (
+                <p className="text-center text-veo-dim font-mono text-sm py-8">No monthly champions yet — first month still in progress</p>
+              ) : (
+                <div className="space-y-3">
+                  {monthlyWins.map((entry, i) => (
+                    <div key={entry.id} className={`p-4 rounded-xl border ${i === 0 ? 'border-yellow-500/40 bg-yellow-500/5' : 'border-veo-border'}`}>
+                      <div className="flex items-center gap-3 mb-3">
+                        <span className="text-2xl">{entry.countryFlag}</span>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-display text-base font-700 text-white">{entry.name}</span>
+                            {i === 0 && <span className="font-mono text-[10px] text-yellow-400 bg-yellow-500/10 px-1.5 py-0.5 rounded border border-yellow-500/20">MOST TITLES</span>}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`font-display text-3xl font-900 ${i === 0 ? 'text-yellow-400' : 'text-veo-green'}`}>{entry.winCount}</div>
+                          <div className="font-mono text-[9px] text-veo-dim">{entry.winCount === 1 ? 'WIN' : 'WINS'}</div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {entry.months.map(mo => (
+                          <span key={`${mo.year}-${mo.month}`} className="font-mono text-[10px] px-2 py-1 rounded border border-veo-border text-veo-dim">
+                            🏆 {mo.label} <span className="text-veo-green">{mo.avgScore.toFixed(0)} avg</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ─── TITLE RACE ─── */}
+        {activeTab === 'titlerace' && (
+          <div className="space-y-4">
+            <div className="bento-card p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <BarChart2 size={14} className="text-veo-green"/>
+                <span className="font-display text-lg font-700 tracking-wide text-white uppercase">Title Race</span>
+                <button onClick={fetchTitleRace} className="ml-auto p-1.5 rounded-lg border border-veo-border text-veo-dim hover:text-veo-green transition-colors">
+                  <RefreshCw size={12}/>
+                </button>
+              </div>
+              <p className="font-mono text-[10px] text-veo-dim mb-4">Average score progression — day by day this month</p>
+              {!titleRaceLoaded ? (
+                <p className="text-center text-veo-dim font-mono text-sm py-8">Loading…</p>
+              ) : !titleRace || titleRace.days.length === 0 ? (
+                <p className="text-center text-veo-dim font-mono text-sm py-8">No scores submitted yet this month</p>
+              ) : (
+                <TitleRaceChart data={titleRace} />
+              )}
+            </div>
+          </div>
+        )}
+
       </div>
 
       <footer className="border-t border-veo-border mt-12 py-4 text-center">

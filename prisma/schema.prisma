@@ -19,6 +19,19 @@ model Player {
   redCardsReceived RedCard[]      @relation("ReceivedBy")
   chatMessages     ChatMessage[]
   breakingNews     BreakingNews[]
+  monthlyWins      MonthlyWin[]
+}
+
+model MonthlyWin {
+  id        Int      @id @default(autoincrement())
+  playerId  Int
+  player    Player   @relation(fields: [playerId], references: [id])
+  year      Int
+  month     Int      // 0-indexed (0=Jan, 11=Dec)
+  avgScore  Float    // winning average that month
+  createdAt DateTime @default(now())
+
+  @@unique([year, month])
 }
 
 model Score {
