@@ -60,11 +60,16 @@ export async function PUT(req: NextRequest) {
 
     // Handle simulated date
     if (simulatedDate !== undefined) {
-      await prisma.appSettings.upsert({
-        where: { id: 1 },
-        create: { id: 1, simulatedDate: simulatedDate || null },
-        update: { simulatedDate: simulatedDate || null },
-      })
+      try {
+        await prisma.appSettings.upsert({
+          where: { id: 1 },
+          create: { id: 1, simulatedDate: simulatedDate || null },
+          update: { simulatedDate: simulatedDate || null },
+        })
+      } catch (e) {
+        console.error('[admin/config PUT] appSettings upsert failed:', e)
+        return NextResponse.json({ error: `AppSettings save failed: ${String(e)}` }, { status: 500 })
+      }
     }
 
     // Clear double points day for the simulated month
