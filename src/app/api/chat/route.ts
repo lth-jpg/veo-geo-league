@@ -27,3 +27,24 @@ export async function POST(req: NextRequest) {
   })
   return NextResponse.json(msg)
 }
+
+export async function DELETE(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const msgId = searchParams.get('id')
+  const adminName = searchParams.get('adminName')
+
+  if (adminName?.toLowerCase() !== 'leo') {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
+  if (!msgId) {
+    return NextResponse.json({ error: 'Message ID required' }, { status: 400 })
+  }
+
+  try {
+    await prisma.chatMessage.delete({ where: { id: parseInt(msgId) } })
+    return NextResponse.json({ ok: true })
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 })
+  }
+}
+
