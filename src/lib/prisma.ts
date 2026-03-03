@@ -4,10 +4,13 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
+// Always reuse the cached singleton — in production this prevents a new
+// PrismaClient (and its connection pool) from being created on every
+// module evaluation, which would exhaust DB connections and RAM.
+if (!globalForPrisma.prisma) {
+  globalForPrisma.prisma = new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
   })
+}
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+export const prisma = globalForPrisma.prisma

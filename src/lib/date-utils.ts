@@ -5,17 +5,24 @@ import { prisma } from './prisma'
  * Uses simulatedDate from AppSettings when set; falls back to real date.
  */
 export async function getEffectiveDateISO(): Promise<string> {
+  const now = new Date()
+  const realISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
   try {
     const settings = await prisma.appSettings.findUnique({ where: { id: 1 } })
-    if (settings?.simulatedDate) return settings.simulatedDate
+    if (settings?.simulatedDate) {
+      // Auto-clear the simulated date once the real calendar day has moved past it
+      if (settings.simulatedDate < realISO) {
+        await prisma.appSettings.update({ where: { id: 1 }, data: { simulatedDate: null } })
+      } else {
+        return settings.simulatedDate
+      }
+    }
   } catch {
     // AppSettings table may not exist yet on fresh deploy — fall through to real date
   }
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  const d = String(now.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
+
+  return realISO
 }
 
 /** Full-day Date range for a given YYYY-MM-DD string. */
