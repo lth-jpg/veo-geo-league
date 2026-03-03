@@ -419,8 +419,11 @@ export default function VeoGeoApp() {
 
   const fetchRedCardStatus = useCallback(async () => {
     if (!currentPlayer) return
-    const res = await fetch(`/api/redcards?givenById=${currentPlayer.id}`)
-    setRedCardStatus(await res.json())
+    try {
+      const res = await fetch(`/api/redcards?givenById=${currentPlayer.id}`)
+      if (!res.ok) return
+      setRedCardStatus(await res.json())
+    } catch { /* ignore */ }
   }, [currentPlayer])
 
   const fetchBreakingNews = useCallback(async () => {
@@ -667,10 +670,12 @@ export default function VeoGeoApp() {
   }
 
   const postChatSystem = async (text: string) => {
-    await fetch('/api/chat', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ authorName: 'League', text }),
-    })
+    try {
+      await fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ authorName: 'League', text }),
+      })
+    } catch { /* ignore */ }
     await fetchChat()
   }
 
@@ -712,18 +717,23 @@ export default function VeoGeoApp() {
 
   const sendChat = async () => {
     if (!currentPlayer || !chatInput.trim()) return
-    await fetch('/api/chat', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: currentPlayer.id, authorName: currentPlayer.name, text: chatInput.trim() }),
-    })
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId: currentPlayer.id, authorName: currentPlayer.name, text: chatInput.trim() }),
+      })
+      if (!res.ok) { notify('Failed to send message', 'red'); return }
+    } catch { notify('Failed to send message', 'red'); return }
     setChatInput(''); await fetchChat()
   }
 
   const deleteChat = async (msgId: number) => {
     if (!isLeoAdmin || !currentPlayer) return
-    const res = await fetch(`/api/chat?id=${msgId}&adminName=${encodeURIComponent(currentPlayer.name)}`, { method: 'DELETE' })
-    if (res.ok) { await fetchChat() }
-    else { const err = await res.json(); notify(err.error || 'Error deleting message', 'red') }
+    try {
+      const res = await fetch(`/api/chat?id=${msgId}&adminName=${encodeURIComponent(currentPlayer.name)}`, { method: 'DELETE' })
+      if (res.ok) { await fetchChat() }
+      else { const err = await res.json(); notify(err.error || 'Error deleting message', 'red') }
+    } catch { notify('Error deleting message', 'red') }
   }
 
   const isLeoAdmin = currentPlayer?.name.toLowerCase() === 'leo'
