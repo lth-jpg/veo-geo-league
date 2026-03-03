@@ -6,7 +6,7 @@ import {
   Trophy, Flag, MessageSquare, Zap, ChevronDown, Search,
   Send, Archive, RefreshCw, Star, X, Plus, Check,
   TrendingUp, Users, Calendar, Shield, AlertTriangle,
-  ArrowUp, ArrowDown, Pencil, Award, BarChart2,
+  ArrowUp, ArrowDown, Pencil, Award, BarChart2, Trash2,
 } from 'lucide-react'
 
 type Player = { id: number; name: string; countryFlag: string }
@@ -655,6 +655,15 @@ export default function VeoGeoApp() {
       notify(`Score submitted: ${t.toLocaleString()} pts!`)
       setR1(''); setR2(''); setR3('')
     } else { notify('Error submitting score', 'red') }
+  }
+
+  const deleteMyScore = async (scoreId: number) => {
+    if (!currentPlayer) return
+    const res = await fetch(`/api/scores?id=${scoreId}&playerId=${currentPlayer.id}`, { method: 'DELETE' })
+    if (res.ok) {
+      await fetchTodayScores(); await fetchLeaderboard()
+      notify('Score removed')
+    } else { notify('Failed to remove score', 'red') }
   }
 
   const postChatSystem = async (text: string) => {
@@ -2106,11 +2115,32 @@ export default function VeoGeoApp() {
                       <div className="font-mono text-[10px] text-yellow-400/70 mt-0.5">Today&apos;s score counts TWICE in the standings</div>
                     </div>
                   )}
+                  {(() => {
+                    const myScore = todayScores.find(s => s.playerId === currentPlayer.id)
+                    if (!myScore) return null
+                    return (
+                      <div className="mb-4 p-3 rounded-xl border border-veo-green/30 bg-veo-green/5 flex items-center justify-between">
+                        <div>
+                          <div className="font-mono text-[9px] text-veo-dim uppercase tracking-wider mb-0.5">Today&apos;s score</div>
+                          <div className="font-display text-xl font-900 text-veo-green">{myScore.total.toLocaleString()}</div>
+                          <div className="font-mono text-[9px] text-veo-dim">{myScore.round1.toLocaleString()} · {myScore.round2.toLocaleString()} · {myScore.round3.toLocaleString()}</div>
+                        </div>
+                        <button
+                          onClick={() => deleteMyScore(myScore.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-veo-red/40 text-veo-red font-mono text-[10px] hover:bg-veo-red/10 transition-colors"
+                        >
+                          <Trash2 size={11}/> Remove
+                        </button>
+                      </div>
+                    )
+                  })()}
                   <div className="space-y-4 mb-6">
                     {[{label:'Round 1',val:r1,set:setR1},{label:'Round 2',val:r2,set:setR2},{label:'Round 3',val:r3,set:setR3}].map(({label,val,set})=>(
                       <div key={label}>
                         <label className="block font-mono text-[10px] text-veo-dim mb-1.5 uppercase tracking-wider">{label} <span className="text-veo-muted">/ 5,000</span></label>
-                        <input type="number" min={0} max={5000} value={val} onChange={e=>set(e.target.value)} placeholder="0"
+                        <input type="number" min={0} max={5000} value={val}
+                          onChange={e => { const v = e.target.value; set(v === '' ? '' : String(Math.min(parseInt(v) || 0, 5000))) }}
+                          placeholder="0"
                           className="veo-input w-full px-4 py-3 rounded-xl text-2xl font-display font-700 text-center"/>
                         <div className="mt-1.5 h-1.5 rounded-full bg-veo-muted overflow-hidden">
                           <div className="h-full rounded-full transition-all duration-300" style={{
@@ -2134,7 +2164,7 @@ export default function VeoGeoApp() {
                       <div className="mt-2 font-mono text-[10px] text-veo-red">⚠️ Sub-6000 incoming — brace for shame</div>
                     )}
                   </div>
-                  <button onClick={submitScore} disabled={total===0}
+                  <button onClick={submitScore} disabled={r1 === '' || r2 === '' || r3 === ''}
                     className="w-full py-3 rounded-xl bg-veo-green text-black font-display text-lg font-900 tracking-wider hover:bg-veo-green/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2">
                     <Check size={18}/> SUBMIT SCORE
                   </button>

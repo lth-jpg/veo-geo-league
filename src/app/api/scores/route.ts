@@ -70,12 +70,22 @@ export async function DELETE(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const scoreId = searchParams.get('id')
   const adminName = searchParams.get('adminName')
+  const requestingPlayerId = searchParams.get('playerId')
 
-  if (adminName?.toLowerCase() !== 'leo') {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-  }
   if (!scoreId) {
     return NextResponse.json({ error: 'Score ID required' }, { status: 400 })
+  }
+
+  const score = await prisma.score.findUnique({ where: { id: parseInt(scoreId) } })
+  if (!score) {
+    return NextResponse.json({ error: 'Score not found' }, { status: 404 })
+  }
+
+  const isAdmin = adminName?.toLowerCase() === 'leo'
+  const isOwner = requestingPlayerId && score.playerId === parseInt(requestingPlayerId)
+
+  if (!isAdmin && !isOwner) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
   try {
