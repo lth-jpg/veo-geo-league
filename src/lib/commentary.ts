@@ -153,6 +153,42 @@ export function soloLine(name: string): string {
   return pick(SOLO_LINES, dateSeed() + 8)(name)
 }
 
+// ─── Toilet / Wooden Spoon ─────────────────────────────────────────────────
+const TOILET_LINES = [
+  (name: string, score: number) => `🚽 ${name} takes the wooden spoon with ${score.toLocaleString()}. The porcelain throne awaits.`,
+  (name: string, score: number) => `${name} posted ${score.toLocaleString()}. That score went straight to the sewer. 🚽`,
+  (name: string, score: number) => `🚽 Flush it. ${name}'s ${score.toLocaleString()} is not something we need to keep.`,
+  (name: string, score: number) => `${name} — ${score.toLocaleString()}. There's no spin cycle strong enough for that one. 🚽`,
+  (name: string, score: number) => `🚽 Wooden spoon goes to ${name} (${score.toLocaleString()}). The kind of score you don't frame.`,
+  (name: string, score: number) => `${name} with ${score.toLocaleString()}. The toilet is calling and it wants its number back. 🚽`,
+  (name: string, score: number) => `🚽 ${score.toLocaleString()} from ${name}. That's going straight to the bottom of the bowl.`,
+  (name: string, score: number) => `${name} delivered ${score.toLocaleString()} today. Grab a plunger. 🚽`,
+  (name: string, score: number) => `🚽 ${name}'s ${score.toLocaleString()} is today's most flushable score. And it's not close.`,
+  (name: string, score: number) => `${name} — ${score.toLocaleString()}. Somewhere a toilet is nodding in solidarity. 🚽`,
+  (name: string, score: number) => `🚽 ${name} wins the wooden spoon. ${score.toLocaleString()} is a number best forgotten.`,
+  (name: string, score: number) => `${name} posted ${score.toLocaleString()} and the porcelain throne has been reserved. 🚽`,
+]
+
+export function toiletLine(name: string, score: number): string {
+  return pick(TOILET_LINES, dateSeed() + 10)(name, score)
+}
+
+// ─── Biggest gainer ────────────────────────────────────────────────────────
+const BIGGEST_GAINER_LINES = [
+  (name: string, from: number, to: number) => `${name} with a massive leap — up from #${from} to #${to} on the monthly leaderboard. Eyes on them.`,
+  (name: string, from: number, to: number) => `${name} on the move. #${from} → #${to}. That's a statement.`,
+  (name: string, from: number, to: number) => `${name} climbs from #${from} to #${to} today. The table is shifting.`,
+  (name: string, from: number, to: number) => `Big day for ${name} — up ${from - to} spot${from - to === 1 ? '' : 's'} to #${to}. Momentum building.`,
+  (name: string, from: number, to: number) => `${name} storming up the rankings. #${from} to #${to} in one day. Serious business.`,
+  (name: string, from: number, to: number) => `Biggest mover today: ${name}. From #${from} to #${to}. The rest of the league is watching.`,
+  (name: string, from: number, to: number) => `${name} didn't come to play today — they came to climb. #${from} to #${to}. Watch out.`,
+  (name: string, from: number, to: number) => `#${from} to #${to} for ${name}. That's not luck, that's a score.`,
+]
+
+export function biggestGainerLine(name: string, fromPos: number, toPos: number): string {
+  return pick(BIGGEST_GAINER_LINES, dateSeed() + 11)(name, fromPos, toPos)
+}
+
 // ─── Morning countdown ─────────────────────────────────────────────────────
 const MORNING_OPENERS = [
   'Another day, another chance to embarrass yourself on the leaderboard.',

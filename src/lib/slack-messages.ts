@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { calcMonthlyAverage } from '@/lib/utils'
 import { veoHeader, veoSection, veoContext, veoDivider } from '@/lib/slack'
-import { morningOpener, winnerLine, loserLine, closeRaceLine, perfectLine, fullTurnoutLine, soloLine } from '@/lib/commentary'
+import { morningOpener, winnerLine, loserLine, closeRaceLine, perfectLine, fullTurnoutLine, soloLine, toiletLine, biggestGainerLine } from '@/lib/commentary'
 import { getEffectiveDateISO, isoToDateRange, isoToMonthRange } from '@/lib/date-utils'
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -143,9 +143,12 @@ export async function buildSummaryMessage(customNote?: string) {
   }).catch(() => null)
   const scoreCount = config?.scoreCount ?? 15
 
+  // Need date on each score so we can split before/after today for gainer calc
   const players = await prisma.player.findMany({
-    include: { scores: { where: { date: { gte: mStart, lte: mEnd } }, select: { total: true, isDoubleDay: true } } },
+    include: { scores: { where: { date: { gte: mStart, lte: mEnd } }, select: { total: true, isDoubleDay: true, date: true } } },
   })
+
+  // Monthly standings WITH today
   const monthlyStandings = players
     .map(p => ({
       name: p.name,
@@ -156,57 +159,77 @@ export async function buildSummaryMessage(customNote?: string) {
     .filter(p => p.games > 0)
     .sort((a, b) => b.avg - a.avg)
 
-  const monthlyLeader = monthlyStandings[0]
+  // Monthly standings WITHOUT today — for biggest gainer calculation
+  const standingsBeforeToday = players
+    .map(p => ({
+      name: p.name,
+      flag: p.countryFlag,
+      avg: calcMonthlyAverage(p.scores.filter(s => s.date < start), scoreCount),
+      games: p.scores.filter(s => s.date < start).length,
+    }))
+    .filter(p => p.games > 0)
+    .sort((a, b) => b.avg - a.avg)
 
-  const scoreLines = todayScores.map((score, i) => {
-    const medal = MEDALS[i] ?? `${i + 1}.`
+  // ── Top 3 today ──────────────────────────────────────────────────────────
+  const top3Today = todayScores.slice(0, 3)
+  const top3Lines = top3Today.map((score, i) => {
+    const medal = MEDALS[i]
     const redCardBadge = score.redCards.length > 0 ? ` 🟥×${score.redCards.length}` : ''
     const perfect = score.total === 15000 ? ' ✨' : ''
     const doubleTag = score.isDoubleDay ? ' ⚡×2' : ''
     return `${medal} ${score.player.countryFlag} *${score.player.name}* — ${score.total.toLocaleString()}${doubleTag}${redCardBadge}${perfect}`
   })
 
-  const highlights: string[] = []
   const top = todayScores[0]
-  const bottom = todayScores[todayScores.length - 1]
+  const winnerComment = top.total === 15000 ? perfectLine(top.player.name) : winnerLine(top.player.name)
 
-  if (top.total === 15000) {
-    highlights.push(`✨ ${perfectLine(top.player.name)}`)
-  } else {
-    highlights.push(`🏆 ${winnerLine(top.player.name)}`)
-  }
+  // ── Worst score / wooden spoon ────────────────────────────────────────────
+  const worst = todayScores[todayScores.length - 1]
+  const worstBanter = toiletLine(worst.player.name, worst.total)
 
-  if (todayScores.length > 1) {
-    highlights.push(`💀 ${loserLine(bottom.player.name, bottom.total)}`)
-  }
-
-  if (todayScores.length >= 2) {
-    const gap = todayScores[0].total - todayScores[1].total
-    if (gap < 200) {
-      highlights.push(`⚡ ${closeRaceLine(todayScores[0].player.name, todayScores[1].player.name, gap)}`)
+  // ── Biggest gainer ────────────────────────────────────────────────────────
+  let biggestGainer: { name: string; flag: string; fromPos: number; toPos: number } | null = null
+  if (standingsBeforeToday.length >= 2) {
+    for (const s of todayScores) {
+      const name = s.player.name
+      const fromIdx = standingsBeforeToday.findIndex(p => p.name === name)
+      const toIdx = monthlyStandings.findIndex(p => p.name === name)
+      // fromIdx > 0 = they existed before and weren't already #1
+      if (fromIdx > 0 && toIdx >= 0) {
+        const gain = fromIdx - toIdx
+        if (gain > 0 && (!biggestGainer || gain > (biggestGainer.fromPos - biggestGainer.toPos))) {
+          biggestGainer = { name, flag: s.player.countryFlag, fromPos: fromIdx + 1, toPos: toIdx + 1 }
+        }
+      }
     }
   }
 
+  // ── Red cards ─────────────────────────────────────────────────────────────
+  const redCardLines: string[] = []
   for (const score of todayScores) {
     for (const rc of score.redCards) {
       const reasonText = rc.reason ? ` Reason: "${rc.reason}"` : ''
-      highlights.push(`🟥 ${rc.givenBy.countryFlag} ${rc.givenBy.name} carded ${score.player.countryFlag} ${score.player.name}.${reasonText}`)
+      redCardLines.push(`🟥 ${rc.givenBy.countryFlag} ${rc.givenBy.name} carded ${score.player.countryFlag} ${score.player.name}.${reasonText}`)
     }
   }
 
+  // ── Extra highlights (close race, full turnout, solo) ─────────────────────
+  const extras: string[] = []
+  if (todayScores.length >= 2) {
+    const gap = todayScores[0].total - todayScores[1].total
+    if (gap < 200) extras.push(`⚡ ${closeRaceLine(todayScores[0].player.name, todayScores[1].player.name, gap)}`)
+  }
   const totalPlayers = await prisma.player.count()
   if (todayScores.length === 1) {
-    highlights.push(`👤 ${soloLine(top.player.name)}`)
+    extras.push(`👤 ${soloLine(top.player.name)}`)
   } else if (todayScores.length === totalPlayers) {
-    highlights.push(`✅ ${fullTurnoutLine(todayScores.length)}`)
+    extras.push(`✅ ${fullTurnoutLine(todayScores.length)}`)
   }
 
-  if (monthlyLeader) {
-    const avg = monthlyLeader.avg.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-    highlights.push(`👑 Monthly leader: ${monthlyLeader.flag} *${monthlyLeader.name}* (avg ${avg})`)
-  }
+  // ── Monthly top 3 ─────────────────────────────────────────────────────────
+  const top3Monthly = monthlyStandings.slice(0, 3)
 
-  // Use effective date for the footer, not real wall-clock date
+  // ── Footer ────────────────────────────────────────────────────────────────
   const [fy, fm, fd] = todayISO.split('-').map(Number)
   const footerDate = new Date(fy, fm - 1, fd).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
 
@@ -214,24 +237,70 @@ export async function buildSummaryMessage(customNote?: string) {
     veoHeader('⛳ VEO GEO LEAGUE — Daily Wrap'),
     ...(customNote ? [veoSection(`📌 ${customNote}`)] : []),
     veoDivider(),
-    veoSection("*Today's Scores*\n" + scoreLines.join('\n')),
-    veoDivider(),
-    veoSection('*Highlights*\n' + highlights.map(h => `• ${h}`).join('\n')),
+    veoSection(`*Today's Top 3*\n${top3Lines.join('\n')}\n\n${winnerComment}`),
+    // Wooden spoon — only when more than one player submitted
+    ...(todayScores.length > 1 ? [
+      veoDivider(),
+      veoSection(`*🚽 Wooden Spoon*\n${worstBanter}`),
+    ] : []),
+    // Biggest gainer
+    ...(biggestGainer ? [
+      veoDivider(),
+      veoSection(`*📈 Biggest Gainer*\n${biggestGainerLine(biggestGainer.name, biggestGainer.fromPos, biggestGainer.toPos)}`),
+    ] : []),
+    // Red cards
+    ...(redCardLines.length > 0 ? [
+      veoDivider(),
+      veoSection(redCardLines.join('\n')),
+    ] : []),
+    // Close race / turnout / solo extras
+    ...(extras.length > 0 ? [
+      veoDivider(),
+      veoSection(extras.join('\n')),
+    ] : []),
+    // Monthly top 3
+    ...(top3Monthly.length > 0 ? [
+      veoDivider(),
+      veoSection('*🏆 Monthly Standings*\n' + top3Monthly.map((p, i) =>
+        `${MEDALS[i]} ${p.flag} *${p.name}* — avg ${p.avg.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
+      ).join('\n')),
+    ] : []),
     veoDivider(),
     veoContext(`${footerDate} • VEO GEO LEAGUE`),
   ]
 
-  const fallbackText = `⛳ Daily Wrap — Top: ${top.player.name} ${top.total.toLocaleString()} | Bottom: ${bottom.player.name} ${bottom.total.toLocaleString()}`
+  const fallbackText = `⛳ Daily Wrap — Top: ${top.player.name} ${top.total.toLocaleString()} | Wooden Spoon: ${worst.player.name} ${worst.total.toLocaleString()}`
 
   const previewLines = [
     '⛳ VEO GEO LEAGUE — Daily Wrap',
     ...(customNote ? [`📌 ${customNote}`] : []),
     '─────────────────',
-    "Today's Scores:",
-    ...scoreLines.map(l => `  ${l.replace(/\*/g, '')}`),
-    '─────────────────',
-    'Highlights:',
-    ...highlights.map(h => `  • ${h}`),
+    "Today's Top 3:",
+    ...top3Lines.map(l => `  ${l.replace(/\*/g, '')}`),
+    `  ${winnerComment}`,
+    ...(todayScores.length > 1 ? [
+      '─────────────────',
+      '🚽 Wooden Spoon:',
+      `  ${worstBanter}`,
+    ] : []),
+    ...(biggestGainer ? [
+      '─────────────────',
+      '📈 Biggest Gainer:',
+      `  ${biggestGainerLine(biggestGainer.name, biggestGainer.fromPos, biggestGainer.toPos)}`,
+    ] : []),
+    ...(redCardLines.length > 0 ? [
+      '─────────────────',
+      ...redCardLines,
+    ] : []),
+    ...(extras.length > 0 ? [
+      '─────────────────',
+      ...extras,
+    ] : []),
+    ...(top3Monthly.length > 0 ? [
+      '─────────────────',
+      '🏆 Monthly Standings:',
+      ...top3Monthly.map((p, i) => `  ${MEDALS[i]} ${p.flag} ${p.name} — avg ${p.avg.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`),
+    ] : []),
     '─────────────────',
     footerDate + ' • VEO GEO LEAGUE',
   ]
